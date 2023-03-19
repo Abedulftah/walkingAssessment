@@ -37,6 +37,12 @@ EDGES = {
 }
 
 
+def mouse_callback(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        cv2.destroyAllWindows()
+        multiPose([y, x])
+
+
 def draw_connections(frame, keypoints, edges, confidence_threshold):
     y, x, c = frame.shape
     shaped = np.squeeze(np.multiply(keypoints, [y, x, 1]))
@@ -47,7 +53,7 @@ def draw_connections(frame, keypoints, edges, confidence_threshold):
         y2, x2, c2 = shaped[p2]
 
         if (c1 > confidence_threshold) & (c2 > confidence_threshold):
-            cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 4)
+            cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
 
 
 def draw_keypoints(frame, keypoints, confidence_threshold):
@@ -57,7 +63,7 @@ def draw_keypoints(frame, keypoints, confidence_threshold):
     for kp in shaped:
         ky, kx, kp_conf = kp
         if kp_conf > confidence_threshold:
-            cv2.circle(frame, (int(kx), int(ky)), 6, (0, 255, 0), -1)
+            cv2.circle(frame, (int(kx), int(ky)), 3, (0, 255, 0), -1)
 
 
 def loop_through_people(frame, keypoints_with_scores, edges, confidence_threshold):
@@ -66,58 +72,119 @@ def loop_through_people(frame, keypoints_with_scores, edges, confidence_threshol
         draw_keypoints(frame, person, confidence_threshold)
 
 
-cap = cv2.VideoCapture('5mins.mp4')
-while cap.isOpened():
-    start_time = time.time()  # start time of the loop
+def detect_person(keypoints_with_scores, select):
+    global doChange
+    y, x, _ = frame.shape
+    right_person = None
+    min_person = float('inf')
+    for person in keypoints_with_scores:
+        i = 0
+        sum_distance = 0
+        if len(select) <= 2:
+            shaped = np.squeeze(np.multiply(person[:2], [y, x, 1]))
+        else:
+            shaped = np.squeeze(np.multiply(person, [y, x, 1]))
+        for kp in shaped:
+            ky, kx, _ = kp
+            if len(select) > 2:
+                sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
+            else:
+                sum_distance += abs(kx - select[1]) + abs(ky - select[0])
+            i += 1
+        if sum_distance < min_person:
+            min_person = sum_distance
+            right_person = person
+    if min_person < 700:
+        doChange = True
+    else:
+        doChange = False
+    return right_person
 
-    ret, frame = cap.read()
 
-    # Resize image
-    hi, wi, _ = frame.shape
-    ratio = hi / wi
+def multiPose(select):
+    global doChange
+    doChange = True
+    cap = cv2.VideoCapture('6mins.mp4')
+    while cap.isOpened():
+        start_time = time.time()  # start time of the loop
 
-    wi = wi // 32
-    wi *= 32
-    wi = wi // 3
+        ret, frame = cap.read()
 
-    if wi < 256:
-        wi = 256
+        # Resize image
+        hi, wi, _ = frame.shape
+        ratio = hi / wi
 
-    hi = wi * ratio
-    hi = hi // 32
-    hi *= 32
+        wi = wi // 32
+        wi *= 32
+        wi = wi // 3
 
-    img = frame.copy()
-    img = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), int(hi), int(wi))
-    input_img = tf.cast(img, dtype=tf.int32)
+        if wi < 256:
+            wi = 256
 
-    # Detection section
-    results = movenet(input_img)
-    keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
+        hi = wi * ratio
+        hi = hi // 32
+        hi *= 32
 
-    # Render keypoints
-    loop_through_people(frame, keypoints_with_scores, EDGES, 0.25)
+        # there is a trade-off between Speed and Accuracy. (bigger images -> more accuracy -> low speed)
+        img = frame.copy()
+        img = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), int(hi), int(wi))
+        input_img = tf.cast(img, dtype=tf.int32)
 
-    # fps
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    fontScale = 1
-    thickness = 2
+        # Detection section
+        results = movenet(input_img)
+        keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
 
-    # Get the size of the text
-    size = cv2.getTextSize(str(1.0 / (time.time() - start_time)), font, fontScale, thickness)
+        # detect the right person
+        specific_person = detect_person(keypoints_with_scores, select)
 
-    # Calculate the position of the text
-    x = int((img.shape[1] - size[0][0]/2))
-    y = int((img.shape[0] + size[0][1]*2))
+        if doChange:
+            # we render the right person we want to analyze
+            y, x, _ = frame.shape
+            select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
 
-    # Add the text to the image
-    cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, fontScale, (255, 0, 0), thickness, cv2.LINE_AA)
+        draw_connections(frame, specific_person, EDGES, 0)
+        draw_keypoints(frame, specific_person, 0)
 
-    cv2.imshow('Multipose', frame)
+        # Render keypoints (all the people in the frame)
+        # loop_through_people(frame, keypoints_with_scores, EDGES, 0.25)
 
-    # check every 10 nanoseconds if the q is pressed then exits.
-    if cv2.waitKey(10) & 0xFF == ord('q'):
-        break
-cap.release()
-cv2.destroyAllWindows()
+        # fps
+        font = cv2.FONT_HERSHEY_SIMPLEX
 
+        # Get the size of the text
+        size = cv2.getTextSize(str(1.0 / (time.time() - start_time)), font, 1, 2)
+
+        # Calculate the position of the text
+        x = int((img.shape[1] - size[0][0]/2))
+        y = int((img.shape[0] + size[0][1]*2))
+
+        # Add the text to the image
+        cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
+
+        cv2.imshow('Multipose', frame)
+
+        # check every 10 nanoseconds if the q is pressed to exits.
+        if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    cap = cv2.VideoCapture('6mins.mp4')
+    if cap.isOpened():
+        # read the first frame
+        ret, frame = cap.read()
+        cap.release()
+        cv2.imshow('Selecting the person', frame)
+        cv2.setMouseCallback('Selecting the person', mouse_callback)
+        cv2.waitKey()
+
+        # tracker = cv2.TrackerCSRT_create()
+        #
+        # # Select the person you want to track
+        # person_roi = cv2.selectROI(frame)
+        #
+        # # Initialize the tracker with the person's ROI
+        # tracker.init(frame, person_roi)
+        # multiPose(tracker)
