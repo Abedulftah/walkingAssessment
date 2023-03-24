@@ -3,6 +3,7 @@ import tensorflow_hub as hub
 import cv2
 import time
 import numpy as np
+from Hough import *
 
 
 # I need to check how to use it
@@ -104,7 +105,9 @@ def detect_person(keypoints_with_scores, select):
 def multiPose(select):
     global doChange
     doChange = True
-    cap = cv2.VideoCapture('6mins.mp4')
+    isFirstFrame = True
+    cap = cv2.VideoCapture('vid18.mp4')
+
     while cap.isOpened():
         start_time = time.time()  # start time of the loop
 
@@ -137,6 +140,15 @@ def multiPose(select):
         # detect the right person
         specific_person = detect_person(keypoints_with_scores, select)
 
+        if isFirstFrame:
+            isFirstFrame = False
+            coords = []
+            coords.append([int(specific_person[16][1] * frame.shape[1]),
+                           int(specific_person[16][0] * frame.shape[0])])
+            coords.append([int(specific_person[15][1] * frame.shape[1]),
+                           int(specific_person[15][0] * frame.shape[0])])
+            detectedLine = configureCoords(frame, coords)
+
         if doChange:
             # we render the right person we want to analyze
             y, x, _ = frame.shape
@@ -160,6 +172,8 @@ def multiPose(select):
 
         # Add the text to the image
         cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
+                 (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
 
         cv2.imshow('Multipose', frame)
 
@@ -171,7 +185,7 @@ def multiPose(select):
 
 
 if __name__ == "__main__":
-    cap = cv2.VideoCapture('6mins.mp4')
+    cap = cv2.VideoCapture('vid18.mp4')
     if cap.isOpened():
         # read the first frame
         ret, frame = cap.read()
