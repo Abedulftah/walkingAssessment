@@ -1,8 +1,28 @@
 import tensorflow as tf
 import tensorflow_hub as hub
 import time
+from Hough import *
+
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+  # Restrict TensorFlow to only allocate 4GB of memory on the first GPU
+  try:
+    tf.config.set_logical_device_configuration(
+        gpus[0],
+        [tf.config.LogicalDeviceConfiguration(memory_limit=4096)])
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+  except RuntimeError as e:
+    # Virtual devices must be set before GPUs have been initialized
+    print(e)
+
+with tf.device('/GPU:0'):
+    model = hub.load('https://tfhub.dev/google/movenet/multipose/lightning/1')
+    movenet = model.signatures['serving_default']
+
 
 from Hough import *
+
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -172,6 +192,8 @@ def motionDetection(frame1, frame2, specific_person, fine):
         return frame1
 
 
+def multiPose(select):
+
     global change_cord_rp, movement_time
     change_cord_rp = True
     isFirstFrame = True
@@ -219,7 +241,6 @@ def motionDetection(frame1, frame2, specific_person, fine):
             detectedLine = configureCoords(frame, coords)
 
         if change_cord_rp:
-
             # we render the right person we want to analyze
             y, x, _ = frame.shape
             select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
@@ -249,8 +270,6 @@ def motionDetection(frame1, frame2, specific_person, fine):
         cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
         cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
                     (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
-
-
         cv2.imshow('Multipose', frame)
         frame = frame1
         # check every 10 nanoseconds if the q is pressed to exits.
@@ -262,7 +281,6 @@ def motionDetection(frame1, frame2, specific_person, fine):
 
 if __name__ == "__main__":
     cap = cv2.VideoCapture('5mins.mp4')
-
     if cap.isOpened():
         # read the first frame
         ret, frame = cap.read()
