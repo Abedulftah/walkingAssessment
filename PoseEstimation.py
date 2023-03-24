@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_hub as hub
 import time
+
 from Hough import *
 
 gpus = tf.config.list_physical_devices('GPU')
@@ -171,7 +172,6 @@ def motionDetection(frame1, frame2, specific_person, fine):
         return frame1
 
 
-def multiPose(select):
     global change_cord_rp, movement_time
     change_cord_rp = True
     isFirstFrame = True
@@ -179,6 +179,7 @@ def multiPose(select):
     cap = cv2.VideoCapture('5mins.mp4')
     ret, frame = cap.read()
     movement_time = 0
+
     while cap.isOpened():
         start_time = time.time()  # start time of the loop
         ret, frame1 = cap.read()
@@ -218,6 +219,7 @@ def multiPose(select):
             detectedLine = configureCoords(frame, coords)
 
         if change_cord_rp:
+
             # we render the right person we want to analyze
             y, x, _ = frame.shape
             select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
@@ -248,6 +250,7 @@ def multiPose(select):
         cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
                     (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
 
+
         cv2.imshow('Multipose', frame)
         frame = frame1
         # check every 10 nanoseconds if the q is pressed to exits.
@@ -259,6 +262,7 @@ def multiPose(select):
 
 if __name__ == "__main__":
     cap = cv2.VideoCapture('5mins.mp4')
+
     if cap.isOpened():
         # read the first frame
         ret, frame = cap.read()
