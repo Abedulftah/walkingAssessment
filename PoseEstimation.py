@@ -1,42 +1,50 @@
 import tensorflow as tf
 import tensorflow_hub as hub
-import cv2
 import time
-import numpy as np
+
 from Hough import *
 
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+  # Restrict TensorFlow to only allocate 4GB of memory on the first GPU
+  try:
+    tf.config.set_logical_device_configuration(
+        gpus[0],
+        [tf.config.LogicalDeviceConfiguration(memory_limit=4096)])
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+  except RuntimeError as e:
+    # Virtual devices must be set before GPUs have been initialized
+    print(e)
 
-# I need to check how to use it
-gpus = tf.config.experimental.list_physical_devices('GPU')
-for gpu in gpus:
-    tf.config.experimental.set_memory_growth(gpu, True)
+with tf.device('/GPU:0'):
+    model = hub.load('https://tfhub.dev/google/movenet/multipose/lightning/1')
+    movenet = model.signatures['serving_default']
 
-
-model = hub.load('https://tfhub.dev/google/movenet/multipose/lightning/1')
-movenet = model.signatures['serving_default']
 
 # a dictionary to connect the coordinates together
 EDGES = {
-    (0, 1): 'm',
-    (0, 2): 'c',
-    (1, 3): 'm',
-    (2, 4): 'c',
-    (0, 5): 'm',
-    (0, 6): 'c',
-    (5, 7): 'm',
-    (7, 9): 'm',
-    (6, 8): 'c',
-    (8, 10): 'c',
-    (5, 6): 'y',
-    (5, 11): 'm',
-    (6, 12): 'c',
-    (11, 12): 'y',
-    (11, 13): 'm',
-    (13, 15): 'm',
-    (12, 14): 'c',
-    (14, 16): 'c'
-}
-
+        (0, 1): 'm',
+        (0, 2): 'c',
+        (1, 3): 'm',
+        (2, 4): 'c',
+        (0, 5): 'm',
+        (0, 6): 'c',
+        (5, 7): 'm',
+        (7, 9): 'm',
+        (6, 8): 'c',
+        (8, 10): 'c',
+        (5, 6): 'y',
+        (5, 11): 'm',
+        (6, 12): 'c',
+        (11, 12): 'y',
+        (11, 13): 'm',
+        (13, 15): 'm',
+        (12, 14): 'c',
+        (14, 16): 'c'
+    }
+real_time_size = (640, 480)
+rectangle_cord = []
 
 def mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -45,78 +53,141 @@ def mouse_callback(event, x, y, flags, param):
 
 
 def draw_connections(frame, keypoints, edges, confidence_threshold):
-    y, x, c = frame.shape
-    shaped = np.squeeze(np.multiply(keypoints, [y, x, 1]))
+        y, x, c = frame.shape
+        shaped = np.squeeze(np.multiply(keypoints, [y, x, 1]))
 
-    for edge, color in edges.items():
-        p1, p2 = edge
-        y1, x1, c1 = shaped[p1]
-        y2, x2, c2 = shaped[p2]
+        for edge, color in edges.items():
+            p1, p2 = edge
+            y1, x1, c1 = shaped[p1]
+            y2, x2, c2 = shaped[p2]
 
-        if (c1 > confidence_threshold) & (c2 > confidence_threshold):
-            cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+            if (c1 > confidence_threshold) & (c2 > confidence_threshold):
+                cv2.line(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
 
 
 def draw_keypoints(frame, keypoints, confidence_threshold):
-    y, x, c = frame.shape
-    shaped = np.squeeze(np.multiply(keypoints, [y, x, 1]))
+        y, x, c = frame.shape
+        shaped = np.squeeze(np.multiply(keypoints, [y, x, 1]))
 
-    for kp in shaped:
-        ky, kx, kp_conf = kp
-        if kp_conf > confidence_threshold:
-            cv2.circle(frame, (int(kx), int(ky)), 3, (0, 255, 0), -1)
+        for kp in shaped:
+            ky, kx, kp_conf = kp
+            if kp_conf > confidence_threshold:
+                cv2.circle(frame, (int(kx), int(ky)), 3, (0, 255, 0), -1)
 
 
 def loop_through_people(frame, keypoints_with_scores, edges, confidence_threshold):
-    for person in keypoints_with_scores:
-        draw_connections(frame, person, edges, confidence_threshold)
-        draw_keypoints(frame, person, confidence_threshold)
+        for person in keypoints_with_scores:
+            draw_connections(frame, person, edges, confidence_threshold)
+            draw_keypoints(frame, person, confidence_threshold)
+
+
+def find_person_keypoints(shaped, sum_distance, select, i, confidence_threshold):
+
+        for kp in shaped:
+            ky, kx, ks = kp
+            if len(select) > 2 and select[i][2] > confidence_threshold:
+                sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
+            elif len(select) <= 2:
+                sum_distance += abs(kx - select[1]) + abs(ky - select[0])
+            i += 1
+        return sum_distance
 
 
 def detect_person(keypoints_with_scores, select):
-    global doChange
-    y, x, _ = frame.shape
-    right_person = None
-    min_person = float('inf')
-    for person in keypoints_with_scores:
-        i = 0
-        sum_distance = 0
-        if len(select) <= 2:
-            shaped = np.squeeze(np.multiply(person[:2], [y, x, 1]))
-        else:
-            shaped = np.squeeze(np.multiply(person, [y, x, 1]))
-        for kp in shaped:
-            ky, kx, _ = kp
-            if len(select) > 2:
-                sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
+        global change_cord_rp
+        y, x, _ = frame.shape
+
+        # to save the closest person of all the people that we found
+        right_person = None
+        right_personN = None
+        min_person = float('inf')
+        min_personN = float('inf')
+
+        for person in keypoints_with_scores:
+            if len(select) <= 2:
+                shaped = np.squeeze(np.multiply(person[:2], [y, x, 1]))
             else:
-                sum_distance += abs(kx - select[1]) + abs(ky - select[0])
-            i += 1
-        if sum_distance < min_person:
-            min_person = sum_distance
-            right_person = person
-    if min_person < 700:
-        doChange = True
-    else:
-        doChange = False
-    return right_person
+                shaped = np.squeeze(np.multiply(person, [y, x, 1]))
+            # find the right person with confidence
+            sum_distance = find_person_keypoints(shaped, 0, select, 0, 0.5)
+
+            if sum_distance < min_person and sum_distance != 0:
+                min_person = sum_distance
+                right_person = person
+            # find the right person without confidence
+            sum_distance = find_person_keypoints(shaped, 0, select, 0, 0)
+            if sum_distance < min_personN:
+                min_personN = sum_distance
+                right_personN = person
+
+        if min_person < 600:
+            change_cord_rp = True
+        else:
+            change_cord_rp = False
+
+        print(min_person, min_personN)
+
+        if right_person is None:
+            if min_personN < 600:
+                change_cord_rp = True
+            else:
+                change_cord_rp = False
+            return right_personN
+        return right_person
 
 
-def multiPose(select):
-    global doChange
-    doChange = True
+def motionDetection(frame1, frame2, specific_person, fine):
+        global movement_time
+        diff = cv2.absdiff(frame1, frame2)
+        gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 1.17)
+        _, thresh = cv2.threshold(blur, 5, 255, cv2.THRESH_BINARY)
+        dilated = cv2.dilate(thresh, None, iterations=5)
+        contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            moving = True
+            (x, y, w, h) = cv2.boundingRect(contour)
+            for i in range(len(specific_person)):
+                if specific_person[i][0] < y or specific_person[i][0] > y + h or specific_person[i][1] < x or specific_person[i][1] > x + w:
+                    moving = False
+                    break
+            if moving:
+                rectangle_cord.clear()
+                rectangle_cord.append(x)
+                rectangle_cord.append(y)
+                rectangle_cord.append(w)
+                rectangle_cord.append(h)
+                rectangle_cord.append(True)
+                break
+
+        if len(rectangle_cord) > 0:
+            if fine or rectangle_cord[4]:
+                cv2.rectangle(frame1, (rectangle_cord[0], rectangle_cord[1]), (rectangle_cord[0] + rectangle_cord[2], rectangle_cord[1] + rectangle_cord[3]), (0, 255, 0), 2)
+                cv2.putText(frame1, "Status: {}".format('Movement'), (rectangle_cord[0], rectangle_cord[1]), cv2.FONT_HERSHEY_SIMPLEX,
+                            1, (0, 0, 255), 3)
+            if rectangle_cord[4]:
+                movement_time = 0
+                rectangle_cord[4] = False
+
+        return frame1
+
+
+    global change_cord_rp, movement_time
+    change_cord_rp = True
     isFirstFrame = True
-    cap = cv2.VideoCapture('vid18.mp4')
+    detectedLine = None
+    cap = cv2.VideoCapture('5mins.mp4')
+    ret, frame = cap.read()
+    movement_time = 0
 
     while cap.isOpened():
         start_time = time.time()  # start time of the loop
-
-        ret, frame = cap.read()
+        ret, frame1 = cap.read()
 
         # Resize image
-        hi, wi, _ = frame.shape
-        ratio = hi / wi
+        hi, wi, di = frame.shape
 
+        ratio = hi / wi
         wi = wi // 32
         wi *= 32
         wi = wi // 3
@@ -134,26 +205,30 @@ def multiPose(select):
         input_img = tf.cast(img, dtype=tf.int32)
 
         # Detection section
-        results = movenet(input_img)
+        with tf.device('/GPU:0'):
+            results = movenet(input_img)
         keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
 
         # detect the right person
         specific_person = detect_person(keypoints_with_scores, select)
-
         if isFirstFrame:
             isFirstFrame = False
-            coords = []
-            coords.append([int(specific_person[16][1] * frame.shape[1]),
-                           int(specific_person[16][0] * frame.shape[0])])
-            coords.append([int(specific_person[15][1] * frame.shape[1]),
-                           int(specific_person[15][0] * frame.shape[0])])
+            coords = [[int(specific_person[16][1] * frame.shape[1]),
+                       int(specific_person[16][0] * frame.shape[0])], [int(specific_person[15][1] * frame.shape[1]),
+                                                                       int(specific_person[15][0] * frame.shape[0])]]
             detectedLine = configureCoords(frame, coords)
 
-        if doChange:
+        if change_cord_rp:
+
             # we render the right person we want to analyze
             y, x, _ = frame.shape
             select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
 
+        fine = False
+        if movement_time < (1.0 / (time.time() - start_time)) * 2:
+            fine = True
+
+        frame = motionDetection(frame, frame1, select, fine)
         draw_connections(frame, specific_person, EDGES, 0)
         draw_keypoints(frame, specific_person, 0)
 
@@ -173,10 +248,11 @@ def multiPose(select):
         # Add the text to the image
         cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
         cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
-                 (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
+                    (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
+
 
         cv2.imshow('Multipose', frame)
-
+        frame = frame1
         # check every 10 nanoseconds if the q is pressed to exits.
         if cv2.waitKey(10) & 0xFF == ord('q'):
             break
@@ -185,7 +261,8 @@ def multiPose(select):
 
 
 if __name__ == "__main__":
-    cap = cv2.VideoCapture('vid18.mp4')
+    cap = cv2.VideoCapture('5mins.mp4')
+
     if cap.isOpened():
         # read the first frame
         ret, frame = cap.read()
@@ -193,12 +270,3 @@ if __name__ == "__main__":
         cv2.imshow('Selecting the person', frame)
         cv2.setMouseCallback('Selecting the person', mouse_callback)
         cv2.waitKey()
-
-        # tracker = cv2.TrackerCSRT_create()
-        #
-        # # Select the person you want to track
-        # person_roi = cv2.selectROI(frame)
-        #
-        # # Initialize the tracker with the person's ROI
-        # tracker.init(frame, person_roi)
-        # multiPose(tracker)
