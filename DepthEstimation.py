@@ -36,4 +36,4 @@ def coord_to_line_distance(coordinate, lineCoords):
     B = -1
     C = lineCoords[0][0] - A * lineCoords[0][1]
 
-    return A * coordinate[0] + B * coordinate[1] + C / np.sqrt(A**2 + B**2)
+    return (A * coordinate[0] + B * coordinate[1] + C) / np.sqrt(A**2 + B**2)
