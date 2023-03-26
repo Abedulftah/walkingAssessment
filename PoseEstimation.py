@@ -295,9 +295,13 @@ def multiPose(select):
 
         # Add the text to the image
         cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
-        cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
-                 (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
-        cv2.imshow('Multipose', frame)
+
+        if detectedLine != None:
+            cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
+                     (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
+
+        out_frame = cv2.resize(frame, (1350, 650))
+        cv2.imshow('Multipose', out_frame)
         frame = frame1
         # check every 10 nanoseconds if the q is pressed to exits.
         if cv2.waitKey(10) & 0xFF == ord('q'):
