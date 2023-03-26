@@ -102,10 +102,14 @@ def start(frame, coordinates):
 
     result = []
     lower_threshold, higher_threshold = 180, 240
-    while result == None or len(result) == 0:
+    result = hough_lines_horizontal(im2, lower_threshold, higher_threshold)
+
+    if result == None:
+        lower_threshold -= 110
+        higher_threshold -= 110
         result = hough_lines_horizontal(im2, lower_threshold, higher_threshold)
-        lower_threshold -= 130
-        higher_threshold -= 130
+    if result == None:
+        return None
 
     startPt = inv(T) @ [result[0], result[1], 1]
     endPt = inv(T) @ [result[2], result[3], 1]
