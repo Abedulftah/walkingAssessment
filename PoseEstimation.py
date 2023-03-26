@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 import time
 from Hough import *
+from DepthEstimation import *
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -51,6 +52,13 @@ def mouse_callback(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         cv2.destroyAllWindows()
         multiPose([y, x])
+
+
+def select_line(event, x, y, flags, param):
+    global detectedLine
+    if event == cv2.EVENT_LBUTTONDOWN:
+        cv2.destroyAllWindows()
+        detectedLine = [[int(x-100), int(x+100)], [int(y), int(y)]]
 
 
 def draw_connections(frame, keypoints, edges, confidence_threshold):
@@ -159,7 +167,7 @@ def is_moving_forward(xyxy, center_x, center_y):
             print('Object moved up')
         return True
 
-def motionDetection(frame1, frame2, specific_person, fine):
+def motionDetection(frame1, frame2, specific_person, fine, boundColor):
     global movement_time, xyxy
     noise = cv2.meanStdDev(frame1)[1][0][0]
 
@@ -205,7 +213,7 @@ def motionDetection(frame1, frame2, specific_person, fine):
     if len(rectangle_cord) > 0:
         if fine or rectangle_cord[4]:
             cv2.rectangle(frame1, (rectangle_cord[0], rectangle_cord[1]),
-                          (rectangle_cord[0] + rectangle_cord[2], rectangle_cord[1] + rectangle_cord[3]), (0, 255, 0),
+                          (rectangle_cord[0] + rectangle_cord[2], rectangle_cord[1] + rectangle_cord[3]), boundColor,
                           2)
             cv2.putText(frame1, "Status: {}".format('Movement'), (rectangle_cord[0], rectangle_cord[1]),
                         cv2.FONT_HERSHEY_SIMPLEX,
@@ -218,7 +226,7 @@ def motionDetection(frame1, frame2, specific_person, fine):
 
 
 def multiPose(select):
-    global change_cord_rp, movement_time, xyxy
+    global change_cord_rp, movement_time, xyxy, detectedLine
     change_cord_rp = True
     isFirstFrame = True
     detectedLine = None
@@ -226,6 +234,7 @@ def multiPose(select):
     cap = cv2.VideoCapture(PATH)
     ret, frame = cap.read()
     movement_time = 0
+    boundColor = (0, 0, 255)
 
     while cap.isOpened():
         start_time = time.time()  # start time of the loop
@@ -258,12 +267,11 @@ def multiPose(select):
 
         # detect the right person
         specific_person = detect_person(keypoints_with_scores, select)
+        coords = [[int(specific_person[16][1] * frame.shape[1]),
+                   int(specific_person[16][0] * frame.shape[0])], [int(specific_person[15][1] * frame.shape[1]),
+                                                                   int(specific_person[15][0] * frame.shape[0])]]
         if isFirstFrame:
             isFirstFrame = False
-            coords = [[int(specific_person[16][1] * frame.shape[1]),
-                       int(specific_person[16][0] * frame.shape[0])],
-                      [int(specific_person[15][1] * frame.shape[1]),
-                       int(specific_person[15][0] * frame.shape[0])]]
             detectedLine = configureCoords(frame, coords)
 
         if change_cord_rp:
@@ -276,7 +284,7 @@ def multiPose(select):
             fine = True
 
         # why select and not specific person
-        frame = motionDetection(frame, frame1, select, fine)
+        frame = motionDetection(frame, frame1, select, fine, boundColor)
         draw_connections(frame, specific_person, EDGES, 0.25)
         draw_keypoints(frame, specific_person, 0.25)
 
@@ -296,12 +304,30 @@ def multiPose(select):
         # Add the text to the image
         cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
 
-        if detectedLine != None:
-            cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
-                     (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
+        if detectedLine is None:
+            scale = 0.7
+            out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+            cv2.imshow('Finding The Line', out_frame)
+            cv2.setMouseCallback('Finding The Line', select_line)
+            while detectedLine is None:
+                key = cv2.waitKey(10) & 0xFF
+                if key == ord('q'):  # Press q to exit
+                    exit()
+            detectedLine[0][0] = int(detectedLine[0][0] / scale)
+            detectedLine[0][1] = int(detectedLine[0][1] / scale)
+            detectedLine[1][0] = int(detectedLine[1][0] / scale)
+            detectedLine[1][1] = int(detectedLine[1][1] / scale)
+
+        cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
+                 (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
 
         out_frame = cv2.resize(frame, (1350, 650))
         cv2.imshow('Multipose', out_frame)
+
+        if min(coord_to_line_distance(coords[0], detectedLine),
+               coord_to_line_distance(coords[1], detectedLine)) <= 0:
+            boundColor = (0, 255, 0)
+
         frame = frame1
         # check every 10 nanoseconds if the q is pressed to exits.
         if cv2.waitKey(10) & 0xFF == ord('q'):
