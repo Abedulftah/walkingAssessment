@@ -36,7 +36,7 @@ class MainWindow:
         )
 
         bg = Image.open("root_bg.png")
-        bg = bg.resize((1350, 720))
+        bg = bg.resize((1350, 780))
         bg = ImageTk.PhotoImage(bg)
         self.my_canvas.create_image(0, 0, image=bg, anchor='nw', tags='bg')
 
@@ -65,9 +65,9 @@ class MainWindow:
 
         start_button = tk.Button(self.buttons_root_frame, text="Start Video", command=self.start_video)
         start_button.grid(column=0, row=1)
-        self.ply = PhotoImage(file='ply3.png')
+        self.ply = PhotoImage(file='ply.png')
         self.ply = self.ply.subsample(5, 5)
-        self.paused = PhotoImage(file='pause3.png')
+        self.paused = PhotoImage(file='pause.png')
         self.paused = self.paused.subsample(5, 5)
         self.pause_button = tk.Button(self.root, image=self.ply, command=self.pause_video, borderwidth=0)
         self.pause_button.pack(side=LEFT, padx=2)
