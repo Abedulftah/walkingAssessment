@@ -6,7 +6,7 @@ Among the balance tests, there are several walking tasks (TUG 4Meter-walk). They
 
 In this project we determine automatically, the time of walking/number of frames of the walking tasks.
 
-For the purpose of detecting the person in the video, We use MoveNet Detection.
+For the purpose of detecting the person in the video, We use MoveNet(Tensor Flow) Detection.
 
 
 ## Steps and Approaches:
