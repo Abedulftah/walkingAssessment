@@ -70,6 +70,7 @@ def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, mov
                         cv2.FONT_HERSHEY_SIMPLEX,
                         1, (0, 0, 255), 3)
             isWalking = True
+
         if rectangle_cord[4]:
             movement_time = 0
             rectangle_cord[4] = False

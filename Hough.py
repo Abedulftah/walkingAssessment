@@ -114,6 +114,7 @@ def hashColors(frame):
                 color_dict[k_tuple] += 1
             else:
                 color_dict[k_tuple] = 0
+                print("")
 
 
 def start(frame, coordinates):
