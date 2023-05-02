@@ -84,7 +84,7 @@ class MainWindow:
         close_button.grid(column=0, row=2)
 
     def load_video(self):
-        self.PATH = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.avi;*.mkv")])
+        self.PATH = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.avi")])
 
     def start_video(self):
         self.poseEstimation = PoseEstimation(self.PATH, mainWindow=self, putDetectedLine=self.putDetectedLine)

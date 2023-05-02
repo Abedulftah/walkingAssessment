@@ -2,6 +2,7 @@ import queue
 import threading
 import tkinter as tk
 
+import cv2
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_hub as hub
@@ -197,6 +198,9 @@ class PoseEstimation(threading.Thread):
         frameQueue = queue.Queue()
         othersQueue = queue.Queue()
 
+        start_time = (60*4)+40
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
+
         while cap.isOpened() or not frameQueue.empty():
             if self.should_stop.is_set():
                 return 0
@@ -341,6 +345,8 @@ class PoseEstimation(threading.Thread):
 
     def run(self):
         cap = cv2.VideoCapture(self.PATH)
+        start_time = (60 * 4) + 40
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
         if cap.isOpened():
             # read the first frame
             # global frame
