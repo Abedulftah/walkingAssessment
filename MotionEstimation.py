@@ -18,8 +18,9 @@ def is_moving_forward(xyxy, center_x, center_y):
         return True
 
 
-def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, movement_time, rectangle_cord):
+def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, movement_time, rectangle_cord, fine2=True):
     noise = cv2.meanStdDev(frame1)[1][0][0]
+    isWalking = False
 
     diff = cv2.absdiff(frame1, frame2)
     gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
@@ -61,16 +62,17 @@ def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, mov
             break
 
     if len(rectangle_cord) > 0:
-        if fine or rectangle_cord[4]:
+        if fine2 and (fine or rectangle_cord[4]):
             cv2.rectangle(frame1, (rectangle_cord[0], rectangle_cord[1]),
                           (rectangle_cord[0] + rectangle_cord[2], rectangle_cord[1] + rectangle_cord[3]), boundColor,
                           2)
             cv2.putText(frame1, "Status: {}".format('Movement'), (rectangle_cord[0], rectangle_cord[1]),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         1, (0, 0, 255), 3)
+            isWalking = True
         if rectangle_cord[4]:
             movement_time = 0
             rectangle_cord[4] = False
 
-    return movement_time, xyxy, rectangle_cord, frame1
+    return movement_time, xyxy, rectangle_cord, frame1, isWalking
 

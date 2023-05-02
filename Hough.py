@@ -1,4 +1,5 @@
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import inv
 
@@ -10,6 +11,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
     lines = cv2.HoughLines(edge_detected, 1, np.pi / 180, 80, min_theta=np.pi / 2 - np.pi / 60, max_theta=np.pi / 2 + np.pi / 60)
 
     minCol = float('inf')
+    lines_list = []
     begX, begY, endX, endY = None, None, None, None
 
     if lines is not None and lines.any():
@@ -53,17 +55,40 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
 
             mid_x = int((x1 + x2) / 2)
             mid_y = int((y1 + y2) / 2)
+            lines_list.append([x1, y1, x2, y2])
 
-            k_tuple = tuple(im_l[mid_y][mid_x])
-            if not k_tuple in color_dict or color_dict[k_tuple] <= minCol:
-                minCol = color_dict[k_tuple] if k_tuple in color_dict else 0
-                begX, begY = x1, y1
-                endX, endY = x2, y2
+            # k_tuple = tuple(im_l[mid_y][mid_x])
+            # if not k_tuple in color_dict or color_dict[k_tuple] <= minCol:
+            #     minCol = color_dict[k_tuple] if k_tuple in color_dict else 0
+            #     begX, begY = x1, y1
+            #     endX, endY = x2, y2
 
-    if begX != None:
-        return [begX, begY, endX, endY]
+    lines = []
+    for line in lines_list:
+        x1, y1, x2, y2 = line
+        mid_y = int((y1 + y2) / 2)
+        res = any(abs((x[1] + x[3])/2 - mid_y) <= 8 for x in lines)
+        if not res:
+            lines.append(line)
+
+    startEndLines = []
+    if len(lines) != 0:
+        sorted_lines = sorted(lines, key=lambda x: x[3])
+        startEndLines.append(sorted_lines[0])
+        cv2.line(im_l, (sorted_lines[0][0], sorted_lines[0][1]), (sorted_lines[0][2], sorted_lines[0][3]),
+                 (255, 0, 0), 4)
+        if len(sorted_lines) >= 3:
+            startEndLines.append(sorted_lines[2])
+            cv2.line(im_l, (sorted_lines[2][0], sorted_lines[2][1]), (sorted_lines[2][2], sorted_lines[2][3]),
+                    (255, 0, 0), 4)
+        return startEndLines
 
     return None
+
+    # if begX != None:
+    #     return [begX, begY, endX, endY]
+    #
+    # return None
 
 
 def transformedImage(frame, coordinates):
@@ -101,7 +126,7 @@ def start(frame, coordinates):
     hashColors(im2)
 
     result = []
-    lower_threshold, higher_threshold = 180, 240
+    lower_threshold, higher_threshold = 110, 150
     result = hough_lines_horizontal(im2, lower_threshold, higher_threshold)
 
     if result == None:
@@ -111,24 +136,35 @@ def start(frame, coordinates):
     if result == None:
         return None
 
-    startPt = inv(T) @ [result[0], result[1], 1]
-    endPt = inv(T) @ [result[2], result[3], 1]
-    startPt /= startPt[2]
-    endPt /= endPt[2]
-
     toReturn = []
-    toReturn.append([int(startPt[0]), int(endPt[0])])
-    toReturn.append([int(startPt[1]), int(endPt[1])])
+    startPts1 = inv(T) @ [result[0][0], result[0][1], 1]
+    startPts2 = inv(T) @ [result[0][2], result[0][3], 1]
+    startPts1 /= startPts1[2]
+    startPts2 /= startPts2[2]
+    startPts = []
+    startPts.extend(startPts1[:2])
+    startPts.extend(startPts2[:2])
+    toReturn.append(startPts)
+    if len(result) > 1:
+        endPts1 = inv(T) @ [result[1][0], result[1][1], 1]
+        endPts2 = inv(T) @ [result[1][2], result[1][3], 1]
+        endPts1 /= endPts1[2]
+        endPts2 /= endPts2[2]
+        endPts = []
+        endPts.extend(endPts1[:2])
+        endPts.extend(endPts2[:2])
+        toReturn.append(endPts)
 
     return toReturn
 
 
-def configureCoords(frame, coordinates):
+def configureCoords(frame, coords):
+    coordinates = coords.copy()
     coordinates[1][0] += 100
     coordinates[0][0] -= 120
     coordinates[1][1] += 30
     coordinates[0][1] += 30
-    coordinates.append([int((frame.shape[1]+200) / 2) +200, frame.shape[0] - 1])
+    coordinates.append([int((frame.shape[1]+200) / 2) + 200, frame.shape[0] - 1])
     coordinates.append([int((frame.shape[1] + 200) / 2) - 200, frame.shape[0] - 1])
 
     coordinates = np.float32(coordinates)

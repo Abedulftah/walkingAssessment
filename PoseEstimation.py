@@ -1,5 +1,8 @@
+import queue
 import threading
 import tkinter as tk
+
+import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow_hub as hub
 import time
@@ -48,13 +51,16 @@ real_time_size = (640, 480)
 
 
 class PoseEstimation(threading.Thread):
-    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None):
+    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None, putDetectedLine=True):
         super(PoseEstimation, self).__init__()
         self.frame = None
         self.mainWindow = mainWindow
+        self.putDetectedLine = putDetectedLine
         self.currentFrame = None
         self.PATH = PATH
         self.paused = False
+        self.isWalking = False
+        self.should_stop = threading.Event()
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -62,10 +68,14 @@ class PoseEstimation(threading.Thread):
             self.multiPose([y, x])
 
     def select_line(self, event, x, y, flags, param):
-        global detectedLine
+        global detectedLines
         if event == cv2.EVENT_LBUTTONDOWN:
             cv2.destroyAllWindows()
-            detectedLine = [[int(x - 100), int(x + 100)], [int(y), int(y)]]
+            if detectedLines is None:
+                detectedLines = []
+                detectedLines.append([int(x - 100), int(y), int(x + 100), int(y)])
+            else:
+                detectedLines.insert(0, [int(x - 100), int(y), int(x + 100), int(y)])
 
     def draw_connections(self, frame, keypoints, edges, confidence_threshold):
         y, x, c = frame.shape
@@ -142,71 +152,139 @@ class PoseEstimation(threading.Thread):
         else:
             return min_person < 600, right_person
 
+    def get_keypoints(self, frame, select):
+        # Resize image
+        hi, wi, di = frame.shape
+
+        ratio = hi / wi
+        wi = wi // 32
+        wi *= 32
+        wi = wi // 3
+
+        if wi < 256:
+            wi = 256
+
+        hi = wi * ratio
+        hi = hi // 32
+        hi *= 32
+
+        # there is a trade-off between Speed and Accuracy. (bigger images -> more accuracy -> low speed)
+        img = frame.copy()
+        img = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), int(hi), int(wi))
+        input_img = tf.cast(img, dtype=tf.int32)
+
+        # Detection section
+        with tf.device('/GPU:0'):
+            results = movenet(input_img)
+        keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
+
+        # detect the right person
+        change_cord_rp, specific_person = self.detect_person(keypoints_with_scores, select)
+
+        return keypoints_with_scores, img, change_cord_rp, specific_person
+
     def multiPose(self, select):
-        global detectedLine
-        isFirstFrame = True
-        detectedLine = None
+        global detectedLines
+        isFirstFrame, frameCount = True, 0
+        detectedLines = None
         xyxy = None
         rectangle_cord = []
         cap = cv2.VideoCapture(self.PATH)
         ret, frame = cap.read()
         movement_time = 0
         boundColor = (0, 0, 255)
+        counter = 1
+        frameQueue = queue.Queue()
+        othersQueue = queue.Queue()
 
-        while cap.isOpened():
+        while cap.isOpened() or not frameQueue.empty():
+            if self.should_stop.is_set():
+                return 0
             while self.paused:
                 pass
 
+            while counter < 45:
+                ret_temp, frame_temp = cap.read()
+                frameQueue.put([ret_temp, frame_temp])
+                lastBlockFrame = frame_temp
+                keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame, select)
+                othersQueue.put([keypoints_with_scores, img, change_cord_rp, specific_person])
+                counter += 1
+            if counter < 45:
+                continue
+
             start_time = time.time()  # start time of the loop
-            ret, frame1 = cap.read()
+            ret, frame1 = frameQueue.get()
 
-            # Resize image
-            hi, wi, di = frame.shape
+            keypoints_with_scores, img, change_cord_rp, specific_person = othersQueue.get()
 
-            ratio = hi / wi
-            wi = wi // 32
-            wi *= 32
-            wi = wi // 3
+            if cap.isOpened():
+                keypoints_with_scores1, img1, change_cord_rp1, specific_person1 = self.get_keypoints(lastBlockFrame,
+                                                                                                     select)
+                othersQueue.put([keypoints_with_scores1, img1, change_cord_rp1, specific_person1])
 
-            if wi < 256:
-                wi = 256
-
-            hi = wi * ratio
-            hi = hi // 32
-            hi *= 32
-
-            # there is a trade-off between Speed and Accuracy. (bigger images -> more accuracy -> low speed)
-            img = frame.copy()
-            img = tf.image.resize_with_pad(tf.expand_dims(img, axis=0), int(hi), int(wi))
-            input_img = tf.cast(img, dtype=tf.int32)
-
-            # Detection section
-            with tf.device('/GPU:0'):
-                results = movenet(input_img)
-            keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
-
-            # detect the right person
-            change_cord_rp, specific_person = self.detect_person(keypoints_with_scores, select)
             coords = [[int(specific_person[16][1] * frame.shape[1]),
                        int(specific_person[16][0] * frame.shape[0])],
                       [int(specific_person[15][1] * frame.shape[1]),
                        int(specific_person[15][0] * frame.shape[0])]]
             if isFirstFrame:
                 isFirstFrame = False
-                detectedLine = configureCoords(frame, coords)
+                detectedLines = configureCoords(frame, coords)
+                if not self.putDetectedLine:
+                    detectedLines = None
+
+            if detectedLines is None or len(detectedLines) == 1:
+                scale = 0.6
+                out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+                cv2.imshow('Finding The Line', out_frame)
+                cv2.setMouseCallback('Finding The Line', self.select_line)
+                while detectedLines is None:
+                    key = cv2.waitKey(10) & 0xFF
+                    if key == ord('q'):  # Press q to exit
+                        exit()
+                for row in range(2):
+                    for col in range(4):
+                        detectedLines[row][col] = int(detectedLines[row][col] / scale)
 
             if change_cord_rp:
                 # we render the right person we want to analyze
                 y, x, _ = frame.shape
                 select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
 
+            # Calculating the distance of the current frame, and the 45'th frame from the end line.
+            coords1 = [[int(specific_person1[16][1] * frame.shape[1]),
+                       int(specific_person1[16][0] * frame.shape[0])],
+                      [int(specific_person1[15][1] * frame.shape[1]),
+                       int(specific_person1[15][0] * frame.shape[0])]]
+            distance_from_line = min(coord_to_line_distance(coords[0], detectedLines[1]),
+                   coord_to_line_distance(coords[1], detectedLines[1]))
+            BlockFrameDistance = min(coord_to_line_distance(coords1[0], detectedLines[1]),
+                   coord_to_line_distance(coords1[1], detectedLines[1]))
+            # print(distance_from_line, "    ", BlockFrameDistance)
+            # Now We can find if the person is moving forward by setting a threshold to the difference between them.
+            dis_threshold = 25
+            fine2 = False
+            if lastBlockFrame is None or BlockFrameDistance <= 50 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
+                fine2 = True
+
             fine = False
             if movement_time < (1.0 / (time.time() - start_time)) * 2:
                 fine = True
 
             # why select and not specific person
-            movement_time, xyxy, rectangle_cord, frame = motionDetection(frame, frame1, select, fine, boundColor, xyxy,
-                                                                         movement_time, rectangle_cord)
+            movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1, select, fine,
+                                                                                         boundColor, xyxy,movement_time, rectangle_cord, fine2)
+
+            distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
+                   coord_to_line_distance(coords[1], detectedLines[1]))
+            distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
+                   coord_to_line_distance(coords[1], detectedLines[0]))
+            if self.isWalking and distance_from_line2 > 50 and distance_from_start <= 21 and frameCount is not None:
+                frameCount += 1
+                print(frameCount)
+                walking_speed = 4 / (frameCount / 30)
+                print(walking_speed)
+
             self.draw_connections(frame, specific_person, EDGES, 0.25)
             self.draw_keypoints(frame, specific_person, 0.25)
 
@@ -226,40 +304,40 @@ class PoseEstimation(threading.Thread):
             # Add the text to the image
             cv2.putText(frame, str(1.0 / (time.time() - start_time)), (x, y), font, 1, (255, 0, 0), 2, cv2.LINE_AA)
 
-            if detectedLine is None:
-                scale = 0.7
-                out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
-                cv2.imshow('Finding The Line', out_frame)
-                cv2.setMouseCallback('Finding The Line', self.select_line)
-                while detectedLine is None:
-                    key = cv2.waitKey(10) & 0xFF
-                    if key == ord('q'):  # Press q to exit
-                        exit()
-                detectedLine[0][0] = int(detectedLine[0][0] / scale)
-                detectedLine[0][1] = int(detectedLine[0][1] / scale)
-                detectedLine[1][0] = int(detectedLine[1][0] / scale)
-                detectedLine[1][1] = int(detectedLine[1][1] / scale)
-
-            cv2.line(frame, (detectedLine[0][0], detectedLine[1][0]),
-                     (detectedLine[0][1], detectedLine[1][1]), (255, 0, 0), 4)
+            cv2.line(frame, (int(detectedLines[0][0]), int(detectedLines[0][1])),
+                     (int(detectedLines[0][2]), int(detectedLines[0][3])), (0, 255, 0), 4)
+            if len(detectedLines) > 1:
+                cv2.line(frame, (int(detectedLines[1][0]), int(detectedLines[1][1])),
+                         (int(detectedLines[1][2]), int(detectedLines[1][3])), (0, 255, 0), 3)
 
             out_frame = cv2.resize(frame, (1350, 650))
-            # cv2.imshow('Multipose', out_frame)
             self.mainWindow.update_image(out_frame)
 
-            if min(coord_to_line_distance(coords[0], detectedLine),
-                   coord_to_line_distance(coords[1], detectedLine)) <= 50:
+            if distance_from_line2 <= 50:
+                frameCount = None
                 boundColor = (0, 255, 0)
+            elif distance_from_start <= 21:
+                boundColor = (255, 0, 0)
             else:
                 boundColor = (0, 0, 255)
 
             frame = frame1
+
+            if cap.isOpened():
+                ret_temp, frame_temp = cap.read()
+                frameQueue.put([ret_temp, frame_temp])
+                lastBlockFrame = frame_temp
+            else:
+                lastBlockFrame = None
             # check every 10 nanoseconds if the q is pressed to exits.
             if cv2.waitKey(10) & 0xFF == ord('q'):
                 break
             movement_time += 1
         cap.release()
         cv2.destroyAllWindows()
+
+    def stop(self):
+        self.should_stop.set()
 
     def run(self):
         cap = cv2.VideoCapture(self.PATH)
