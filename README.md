@@ -14,11 +14,11 @@ For the purpose of detecting the person in the video, We use MoveNet(Tensor Flow
 ### Detecting the correct person:
 By pressing on the desired person, We can afterwards trace that person and analyze his walking.
 
-### Detecting the ending line:
+### Detecting the start and finish lines:
 We take the coordinates sorrounding the floor (Decided by the foot coordinates of the detected person, and the camera), then We apply projective transformation
-in order to get an image of the floor, which we apply Edge Detection and Hough transformation to detect lines, and we choose the line with the least common color.
+in order to get an image of the floor, which we apply Edge Detection and Hough transformation to detect lines, and we choose the furthest and third furthest lines as the start and finish lines respectivly, since usually there will be another line between them, the distance between the start line and finish line is 4 meters.
 
-Another approach is to determine it by letting the User press on the line, this is used in case the line can't be found automatically.
+Another approach is to determine it by letting the User press on the lines, this is used in case the lines can't be found automatically, in case only one line is detected the user only has to choose the start line.
 
 ### Start and End time:
 We try to find the starting time (The time the person starts walking), and the Ending time (The time the person crosses the line found previously), 
