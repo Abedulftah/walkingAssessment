@@ -4,6 +4,8 @@ import tkinter as tk
 
 import cv2
 import matplotlib.pyplot as plt
+from skimage.metrics import structural_similarity as ssim, structural_similarity
+import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
 import time
@@ -77,6 +79,40 @@ class PoseEstimation(threading.Thread):
                 detectedLines.append([int(x - 100), int(y), int(x + 100), int(y)])
             else:
                 detectedLines.insert(0, [int(x - 100), int(y), int(x + 100), int(y)])
+
+    def feetOnLine(self, frame1, frame2, startLine):
+        coords = [int(startLine[0]), int(startLine[1] - 8), int(startLine[2]), int(startLine[3] + 20)]
+        count, ind = 0, 0
+        lst1, lst2 = [], []
+        for x in range(coords[0], coords[2]+1):
+            lst1.append([])
+            lst2.append([])
+            for y in range(coords[1], coords[3]+1):
+                lst1[ind].append(frame1[y][x])
+                lst2[ind].append(frame2[y][x])
+            ind +=1
+        frame1_temp = np.array(lst1)
+        frame2_temp = np.array(lst2)
+
+        # cv2.imshow('aaa', frame1_temp)
+        frame1_temp = cv2.cvtColor(frame1_temp, cv2.COLOR_BGR2GRAY)
+        frame1_temp = cv2.equalizeHist(frame1_temp)
+
+        frame2_temp = cv2.cvtColor(frame2_temp, cv2.COLOR_BGR2GRAY)
+        frame2_temp = cv2.equalizeHist(frame2_temp)
+
+        (score, diff) = structural_similarity(frame1_temp, frame2_temp, gaussian_weights=True,
+                                              use_sample_covariance=True, sigma=1.5, full=True)
+        # cv2.imshow('sdsd', diff)
+        print(score)
+
+        # for x in range(coords[0], coords[2]+1):
+        #     for y in range(coords[1], coords[3]+1):
+        #         if abs(int(frame1_temp[y][x]) - int(frame2_temp[y][x])) > 10:
+        #             count += 1
+        #     ind +=1
+        # similarity = 10000 * count/(frame1.shape[0]*frame1.shape[1])
+        return score < 0.57
 
     def draw_connections(self, frame, keypoints, edges, confidence_threshold):
         y, x, c = frame.shape
@@ -198,7 +234,7 @@ class PoseEstimation(threading.Thread):
         frameQueue = queue.Queue()
         othersQueue = queue.Queue()
 
-        start_time = (60*4)+40
+        start_time = (60 * 8) + 47
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
 
         while cap.isOpened() or not frameQueue.empty():
@@ -233,6 +269,7 @@ class PoseEstimation(threading.Thread):
                        int(specific_person[15][0] * frame.shape[0])]]
             if isFirstFrame:
                 isFirstFrame = False
+                self.firstFrame = frame.copy()
                 detectedLines = configureCoords(frame, coords)
                 if not self.putDetectedLine:
                     detectedLines = None
@@ -266,9 +303,9 @@ class PoseEstimation(threading.Thread):
                    coord_to_line_distance(coords1[1], detectedLines[1]))
             # print(distance_from_line, "    ", BlockFrameDistance)
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
-            dis_threshold = 25
+            dis_threshold = 40
             fine2 = False
-            if lastBlockFrame is None or BlockFrameDistance <= 50 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
+            if lastBlockFrame is None or BlockFrameDistance <= 40 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
                 fine2 = True
 
             fine = False
@@ -283,11 +320,15 @@ class PoseEstimation(threading.Thread):
                    coord_to_line_distance(coords[1], detectedLines[1]))
             distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
                    coord_to_line_distance(coords[1], detectedLines[0]))
-            if self.isWalking and distance_from_line2 > 50 and distance_from_start <= 21 and frameCount is not None:
+
+            passedFirst = False
+            print(distance_from_start)
+            if distance_from_start <= 20 or (distance_from_start <= 50 and self.feetOnLine(self.firstFrame, frame, detectedLines[0])):
+                passedFirst = True
+
+            if self.isWalking and distance_from_line2 > 50 and passedFirst and frameCount is not None:
                 frameCount += 1
                 print(frameCount)
-                walking_speed = 4 / (frameCount / 30)
-                print(walking_speed)
 
             self.draw_connections(frame, specific_person, EDGES, 0.25)
             self.draw_keypoints(frame, specific_person, 0.25)
@@ -315,12 +356,16 @@ class PoseEstimation(threading.Thread):
                          (int(detectedLines[1][2]), int(detectedLines[1][3])), (0, 255, 0), 3)
 
             out_frame = cv2.resize(frame, (1350, 650))
-            self.mainWindow.update_image(out_frame)
+            # self.mainWindow.update_image(out_frame)
+            cv2.imshow('Video', out_frame)
 
             if distance_from_line2 <= 50:
+                if frameCount is not None:
+                    walking_speed = 4 / (frameCount / 30)
+                print(walking_speed)
                 frameCount = None
                 boundColor = (0, 255, 0)
-            elif distance_from_start <= 21:
+            elif passedFirst:
                 boundColor = (255, 0, 0)
             else:
                 boundColor = (0, 0, 255)
@@ -345,7 +390,7 @@ class PoseEstimation(threading.Thread):
 
     def run(self):
         cap = cv2.VideoCapture(self.PATH)
-        start_time = (60 * 4) + 40
+        start_time = (60 * 8) + 47
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
         if cap.isOpened():
             # read the first frame
