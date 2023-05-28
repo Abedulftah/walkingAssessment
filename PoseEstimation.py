@@ -12,6 +12,8 @@ import time
 from Hough import *
 from DepthEstimation import *
 from MotionEstimation import *
+from TestsResults import *
+
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     # Restrict TensorFlow to only allocate 4GB of memory on the first GPU
@@ -104,7 +106,7 @@ class PoseEstimation(threading.Thread):
         (score, diff) = structural_similarity(frame1_temp, frame2_temp, gaussian_weights=True,
                                               use_sample_covariance=True, sigma=1.5, full=True)
         # cv2.imshow('sdsd', diff)
-        print(score)
+        # print(score)
 
         # for x in range(coords[0], coords[2]+1):
         #     for y in range(coords[1], coords[3]+1):
@@ -183,7 +185,6 @@ class PoseEstimation(threading.Thread):
             if sum_distance < min_personN:
                 min_personN = sum_distance
                 right_personN = person
-
         if right_person is None:
             return min_personN < 300, right_personN
         else:
@@ -233,8 +234,11 @@ class PoseEstimation(threading.Thread):
         counter = 1
         frameQueue = queue.Queue()
         othersQueue = queue.Queue()
+        walking_speed = 0
+        secondTime = False
+        passedFirst = False
 
-        start_time = (60 * 8) + 47
+        start_time = (60 * 4) + 40
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
 
         while cap.isOpened() or not frameQueue.empty():
@@ -303,7 +307,7 @@ class PoseEstimation(threading.Thread):
                    coord_to_line_distance(coords1[1], detectedLines[1]))
             # print(distance_from_line, "    ", BlockFrameDistance)
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
-            dis_threshold = 40
+            dis_threshold = 50
             fine2 = False
             if lastBlockFrame is None or BlockFrameDistance <= 40 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
                 fine2 = True
@@ -313,17 +317,21 @@ class PoseEstimation(threading.Thread):
                 fine = True
 
             # why select and not specific person
-            movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1, select, fine,
-                                                                                         boundColor, xyxy,movement_time, rectangle_cord, fine2)
+            y, x, _ = frame.shape
+            movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1, np.multiply(specific_person, [y, x, 1]), fine,
+                                                                                         boundColor, xyxy, movement_time, rectangle_cord, fine2)
+            distance_from_start = 1000
+            distance_from_line2 = 1000
+            if specific_person[16][2] >= 0.25 and specific_person[15][2] >= 0.25:
+                distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
+                       coord_to_line_distance(coords[1], detectedLines[1]))
+                distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
+                       coord_to_line_distance(coords[1], detectedLines[0]))
 
-            distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
-                   coord_to_line_distance(coords[1], detectedLines[1]))
-            distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
-                   coord_to_line_distance(coords[1], detectedLines[0]))
-
-            passedFirst = False
-            print(distance_from_start)
-            if distance_from_start <= 20 or (distance_from_start <= 50 and self.feetOnLine(self.firstFrame, frame, detectedLines[0])):
+            # passedFirst = False
+            # print(distance_from_start)
+            if 10 <= distance_from_start <= 20 and self.feetOnLine(self.firstFrame, frame, detectedLines[0]) and self.isWalking:
+                print('on the first line')
                 passedFirst = True
 
             if self.isWalking and distance_from_line2 > 50 and passedFirst and frameCount is not None:
@@ -359,12 +367,19 @@ class PoseEstimation(threading.Thread):
             # self.mainWindow.update_image(out_frame)
             cv2.imshow('Video', out_frame)
 
-            if distance_from_line2 <= 50:
+            if distance_from_line2 <= 50 and passedFirst:
                 if frameCount is not None:
-                    walking_speed = 4 / (frameCount / 30)
+                    walking_speed += 4 / (frameCount / 30)
+                if secondTime:
+                    walking_speed /= 2
+                    secondTime = False
+                    save_evaluation(self.PATH, walking_speed)
+
                 print(walking_speed)
-                frameCount = None
+                frameCount = 0
                 boundColor = (0, 255, 0)
+                passedFirst = False
+                secondTime = True
             elif passedFirst:
                 boundColor = (255, 0, 0)
             else:
@@ -390,7 +405,7 @@ class PoseEstimation(threading.Thread):
 
     def run(self):
         cap = cv2.VideoCapture(self.PATH)
-        start_time = (60 * 8) + 47
+        start_time = (60 * 4) + 40
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
         if cap.isOpened():
             # read the first frame
