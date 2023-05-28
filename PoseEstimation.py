@@ -237,6 +237,7 @@ class PoseEstimation(threading.Thread):
         walking_speed = 0
         secondTime = False
         passedFirst = False
+        selectSaving = select
 
         start_time = (60 * 4) + 40
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
@@ -251,7 +252,9 @@ class PoseEstimation(threading.Thread):
                 ret_temp, frame_temp = cap.read()
                 frameQueue.put([ret_temp, frame_temp])
                 lastBlockFrame = frame_temp
-                keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame, select)
+                keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame, selectSaving)
+                y, x, _ = frame.shape
+                selectSaving = np.multiply(specific_person, [y, x, 1])
                 othersQueue.put([keypoints_with_scores, img, change_cord_rp, specific_person])
                 counter += 1
             if counter < 45:
@@ -264,7 +267,9 @@ class PoseEstimation(threading.Thread):
 
             if cap.isOpened():
                 keypoints_with_scores1, img1, change_cord_rp1, specific_person1 = self.get_keypoints(lastBlockFrame,
-                                                                                                     select)
+                                                                                                     selectSaving)
+                y, x, _ = frame.shape
+                selectSaving = np.multiply(specific_person1, [y, x, 1])
                 othersQueue.put([keypoints_with_scores1, img1, change_cord_rp1, specific_person1])
 
             coords = [[int(specific_person[16][1] * frame.shape[1]),
@@ -295,6 +300,7 @@ class PoseEstimation(threading.Thread):
                 # we render the right person we want to analyze
                 y, x, _ = frame.shape
                 select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
+                print('in')
 
             # Calculating the distance of the current frame, and the 45'th frame from the end line.
             coords1 = [[int(specific_person1[16][1] * frame.shape[1]),
