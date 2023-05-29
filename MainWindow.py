@@ -9,6 +9,7 @@ class MainWindow:
         self.PATH = PATH
         self.putDetectedLine = putDetectedLine
         self.poseEstimation = None
+        self.personFound = None
 
         screen_info = screeninfo.get_monitors()[0]
         screen_width = screen_info.width
@@ -106,8 +107,9 @@ class MainWindow:
 
     def undetect_line(self):
         self.poseEstimation.stop()
-        self.win.destroy()
-        startApp(False)
+        self.poseEstimation = PoseEstimation(self.PATH, mainWindow=self, putDetectedLine=False,
+                                             personFound=self.personFound)
+        self.poseEstimation.start()
 
     def close_window(self):
         self.poseEstimation.stop()

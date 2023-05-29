@@ -56,7 +56,7 @@ real_time_size = (640, 480)
 
 
 class PoseEstimation(threading.Thread):
-    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None, putDetectedLine=True):
+    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None, putDetectedLine=True, personFound = None):
         super(PoseEstimation, self).__init__()
         self.frame = None
         self.mainWindow = mainWindow
@@ -65,6 +65,7 @@ class PoseEstimation(threading.Thread):
         self.PATH = PATH
         self.paused = False
         self.isWalking = False
+        self.personFound = personFound
         self.should_stop = threading.Event()
 
     def mouse_callback(self, event, x, y, flags, param):
@@ -80,7 +81,7 @@ class PoseEstimation(threading.Thread):
                 detectedLines = []
                 detectedLines.append([int(x - 100), int(y), int(x + 100), int(y)])
             else:
-                detectedLines.insert(0, [int(x - 100), int(y), int(x + 100), int(y)])
+                detectedLines.insert(0, [int(x - 80), int(y), int(x + 80), int(y)])
 
     def feetOnLine(self, frame1, frame2, startLine):
         coords = [int(startLine[0]), int(startLine[1] - 8), int(startLine[2]), int(startLine[3] + 20)]
@@ -105,15 +106,7 @@ class PoseEstimation(threading.Thread):
 
         (score, diff) = structural_similarity(frame1_temp, frame2_temp, gaussian_weights=True,
                                               use_sample_covariance=True, sigma=1.5, full=True)
-        # cv2.imshow('sdsd', diff)
-        # print(score)
 
-        # for x in range(coords[0], coords[2]+1):
-        #     for y in range(coords[1], coords[3]+1):
-        #         if abs(int(frame1_temp[y][x]) - int(frame2_temp[y][x])) > 10:
-        #             count += 1
-        #     ind +=1
-        # similarity = 10000 * count/(frame1.shape[0]*frame1.shape[1])
         return score < 0.57
 
     def draw_connections(self, frame, keypoints, edges, confidence_threshold):
@@ -223,6 +216,7 @@ class PoseEstimation(threading.Thread):
 
     def multiPose(self, select):
         global detectedLines
+        self.mainWindow.personFound = select.copy()
         isFirstFrame, frameCount = True, 0
         detectedLines = None
         xyxy = None
@@ -237,13 +231,13 @@ class PoseEstimation(threading.Thread):
         walking_speed = 0
         secondTime = False
         passedFirst = False
-        selectSaving = select
 
-        start_time = (60 * 4) + 40
+        start_time = get_start_time(self.video_num, self.video_num_session)
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
 
         while cap.isOpened() or not frameQueue.empty():
             if self.should_stop.is_set():
+                cv2.destroyAllWindows()
                 return 0
             while self.paused:
                 pass
@@ -252,10 +246,11 @@ class PoseEstimation(threading.Thread):
                 ret_temp, frame_temp = cap.read()
                 frameQueue.put([ret_temp, frame_temp])
                 lastBlockFrame = frame_temp
-                keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame, selectSaving)
-                y, x, _ = frame.shape
-                selectSaving = np.multiply(specific_person, [y, x, 1])
+                keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame_temp, select)
                 othersQueue.put([keypoints_with_scores, img, change_cord_rp, specific_person])
+                # if change_cord_rp:
+                #     y, x, _ = frame_temp.shape
+                #     select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
                 counter += 1
             if counter < 45:
                 continue
@@ -265,12 +260,16 @@ class PoseEstimation(threading.Thread):
 
             keypoints_with_scores, img, change_cord_rp, specific_person = othersQueue.get()
 
+            # Maybe the if statement should be: if lastBlockFrame is not None.
             if cap.isOpened():
                 keypoints_with_scores1, img1, change_cord_rp1, specific_person1 = self.get_keypoints(lastBlockFrame,
-                                                                                                     selectSaving)
-                y, x, _ = frame.shape
-                selectSaving = np.multiply(specific_person1, [y, x, 1])
+                                                                                                     select)
                 othersQueue.put([keypoints_with_scores1, img1, change_cord_rp1, specific_person1])
+
+                if change_cord_rp1:
+                    y, x, _ = frame.shape
+                    select = np.squeeze(np.multiply(specific_person1, [y, x, 1]))
+                    print('in')
 
             coords = [[int(specific_person[16][1] * frame.shape[1]),
                        int(specific_person[16][0] * frame.shape[0])],
@@ -279,28 +278,37 @@ class PoseEstimation(threading.Thread):
             if isFirstFrame:
                 isFirstFrame = False
                 self.firstFrame = frame.copy()
-                detectedLines = configureCoords(frame, coords)
+                detectedLines = configureCoords(self.PATH, frame, coords)
                 if not self.putDetectedLine:
                     detectedLines = None
 
-            if detectedLines is None or len(detectedLines) == 1:
-                scale = 0.6
+            scale = 0.6
+            # If the algorithm didn't find any line, We let the user choose the end line,
+            # and then the start line in the next if statement.
+            if detectedLines is None:
                 out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
-                cv2.imshow('Finding The Line', out_frame)
-                cv2.setMouseCallback('Finding The Line', self.select_line)
+                cv2.imshow('Choose end line!', out_frame)
+                cv2.setMouseCallback('Choose end line!', self.select_line)
                 while detectedLines is None:
                     key = cv2.waitKey(10) & 0xFF
                     if key == ord('q'):  # Press q to exit
                         exit()
-                for row in range(2):
-                    for col in range(4):
-                        detectedLines[row][col] = int(detectedLines[row][col] / scale)
+                for col in range(4):
+                    detectedLines[0][col] = int(detectedLines[0][col] / scale)
+                save_evaluation(self.PATH, detectedLines[0].copy(), 'End Line')
 
-            if change_cord_rp:
-                # we render the right person we want to analyze
-                y, x, _ = frame.shape
-                select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
-                print('in')
+            # this will be True if the algorithm didn't find any line, or it only found the end line.
+            if len(detectedLines) == 1:
+                out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+                cv2.imshow('Choose start line!', out_frame)
+                cv2.setMouseCallback('Choose start line!', self.select_line)
+                while len(detectedLines) == 1:
+                    key = cv2.waitKey(10) & 0xFF
+                    if key == ord('q'):  # Press q to exit
+                        exit()
+                for col in range(4):
+                    detectedLines[0][col] = int(detectedLines[0][col] / scale)
+                save_evaluation(self.PATH, detectedLines[0].copy(), 'Start Line')
 
             # Calculating the distance of the current frame, and the 45'th frame from the end line.
             coords1 = [[int(specific_person1[16][1] * frame.shape[1]),
@@ -411,14 +419,23 @@ class PoseEstimation(threading.Thread):
 
     def run(self):
         cap = cv2.VideoCapture(self.PATH)
-        start_time = (60 * 4) + 40
+
+        folders = self.PATH.split('/')
+        video_name = folders[-1].split('.')
+        video_name = video_name[0].split('_')
+        self.video_num = int(video_name[0])
+        self.video_num_session = video_name[1]
+
+        start_time = get_start_time(self.video_num, self.video_num_session)
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
         if cap.isOpened():
             # read the first frame
             # global frame
             ret, self.frame = cap.read()
             cap.release()
-            # print(cv2.meanStdDev(frame)[1][0][0], cv2.Laplacian(frame, cv2.CV_8UC1).var())
-            cv2.imshow('Selecting the person', self.frame)
-            cv2.setMouseCallback('Selecting the person', self.mouse_callback)
-            cv2.waitKey()
+            if self.personFound is not None:
+                self.multiPose(self.personFound)
+            else:
+                cv2.imshow('Selecting the person', self.frame)
+                cv2.setMouseCallback('Selecting the person', self.mouse_callback)
+                cv2.waitKey()
