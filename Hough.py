@@ -2,6 +2,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import inv
+from TestsResults import *
 
 
 def hough_lines_horizontal(im, lower_threshold, highr_threshold):
@@ -10,9 +11,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
     edge_detected = cv2.Canny(im_l, lower_threshold, highr_threshold, apertureSize=3)
     lines = cv2.HoughLines(edge_detected, 1, np.pi / 180, 80, min_theta=np.pi / 2 - np.pi / 60, max_theta=np.pi / 2 + np.pi / 60)
 
-    minCol = float('inf')
     lines_list = []
-    begX, begY, endX, endY = None, None, None, None
 
     if lines is not None and lines.any():
         for line in lines:
@@ -53,15 +52,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
                 x2 = int((h - 1 - y2) * (x1 - x2) / (y1 - y2) + x2)
                 y2 = h - 1
 
-            mid_x = int((x1 + x2) / 2)
-            mid_y = int((y1 + y2) / 2)
             lines_list.append([x1, y1, x2, y2])
-
-            # k_tuple = tuple(im_l[mid_y][mid_x])
-            # if not k_tuple in color_dict or color_dict[k_tuple] <= minCol:
-            #     minCol = color_dict[k_tuple] if k_tuple in color_dict else 0
-            #     begX, begY = x1, y1
-            #     endX, endY = x2, y2
 
     lines = []
     for line in lines_list:
@@ -85,59 +76,36 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
 
     return None
 
-    # if begX != None:
-    #     return [begX, begY, endX, endY]
-    #
-    # return None
-
 
 def transformedImage(frame, coordinates):
-    n, m = frame.shape[:2]
     n1, m1 = int(max(coordinates[2][1], coordinates[3][1]) - min(coordinates[0][1], coordinates[1][1]))\
         , int(max(coordinates[1][0], coordinates[2][0]) - min(coordinates[0][0], coordinates[3][0]))
-    n1 = max(n1,m1)
-    m1=n1
+    n1 = max(n1, m1)
+    m1 = n1
     dest = np.float32([[0, 0],
                         [n1, 0],
                         [n1, m1],
                         [0, m1]])
+
     T = cv2.getPerspectiveTransform(coordinates, dest)
     transformed_im = cv2.warpPerspective(frame, T, (m1, n1), flags = cv2.INTER_CUBIC)
 
     return transformed_im, T
 
-def hashColors(frame):
-    for m in frame:
-        for k in m:
-            k_tuple = tuple(k)
-            if k_tuple in color_dict:
-                color_dict[k_tuple] += 1
-            else:
-                color_dict[k_tuple] = 0
-                print("")
 
-
-def start(frame, coordinates):
-    global color_dict
-    color_dict = {}
-
-    n, m = frame.shape[:2]
-
+def start(frame, coordinates, toReturn):
     im2, T = transformedImage(frame, coordinates)
-    hashColors(im2)
 
-    result = []
     lower_threshold, higher_threshold = 110, 150
     result = hough_lines_horizontal(im2, lower_threshold, higher_threshold)
 
-    if result == None:
+    if result is None:
         lower_threshold -= 110
         higher_threshold -= 110
         result = hough_lines_horizontal(im2, lower_threshold, higher_threshold)
-    if result == None:
+    if result is None:
         return None
 
-    toReturn = []
     startPts1 = inv(T) @ [result[0][0], result[0][1], 1]
     startPts2 = inv(T) @ [result[0][2], result[0][3], 1]
     startPts1 /= startPts1[2]
@@ -146,7 +114,7 @@ def start(frame, coordinates):
     startPts.extend(startPts1[:2])
     startPts.extend(startPts2[:2])
     toReturn.append(startPts)
-    if len(result) > 1:
+    if len(result) > 1 and len(toReturn) < 2:
         endPts1 = inv(T) @ [result[1][0], result[1][1], 1]
         endPts2 = inv(T) @ [result[1][2], result[1][3], 1]
         endPts1 /= endPts1[2]
@@ -159,7 +127,17 @@ def start(frame, coordinates):
     return toReturn
 
 
-def configureCoords(frame, coords):
+def configureCoords(path, frame, coords):
+    toReturn = []
+
+    saved_value = save_evaluation(path, None, 'Start Line')
+    if saved_value is not None:
+        toReturn.append(saved_value)
+    saved_value = save_evaluation(path, None, 'End Line')
+    if saved_value is not None:
+        toReturn.append(saved_value)
+        return toReturn
+
     coordinates = coords.copy()
     coordinates[1][0] += 100
     coordinates[0][0] -= 120
@@ -170,4 +148,4 @@ def configureCoords(frame, coords):
 
     coordinates = np.float32(coordinates)
 
-    return start(frame, coordinates)
+    return start(frame, coordinates, toReturn)
