@@ -321,7 +321,7 @@ class PoseEstimation(threading.Thread):
                    coord_to_line_distance(coords1[1], detectedLines[1]))
             # print(distance_from_line, "    ", BlockFrameDistance)
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
-            dis_threshold = 50
+            dis_threshold = 25
             fine2 = False
             if lastBlockFrame is None or BlockFrameDistance <= 40 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
                 fine2 = True
@@ -344,7 +344,9 @@ class PoseEstimation(threading.Thread):
 
             # passedFirst = False
             # print(distance_from_start)
-            if 10 <= distance_from_start <= 20 and self.feetOnLine(self.firstFrame, frame, detectedLines[0]) and self.isWalking:
+            moving_forward = distance_from_line - BlockFrameDistance
+            if 10 <= distance_from_start <= 20 and self.feetOnLine(self.firstFrame, frame, detectedLines[0])\
+                    and self.isWalking and moving_forward >= dis_threshold:
                 print('on the first line')
                 passedFirst = True
 
