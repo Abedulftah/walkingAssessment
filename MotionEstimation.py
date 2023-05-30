@@ -18,7 +18,7 @@ def is_moving_forward(xyxy, center_x, center_y):
         return True
 
 
-def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, movement_time, rectangle_cord, fine2=True):
+def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, movement_time, rectangle_cord, fine2=True, walking_speed=0, secondTime=False):
     noise = cv2.meanStdDev(frame1)[1][0][0]
     isWalking = False
 
@@ -66,9 +66,14 @@ def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, mov
             cv2.rectangle(frame1, (rectangle_cord[0], rectangle_cord[1]),
                           (rectangle_cord[0] + rectangle_cord[2], rectangle_cord[1] + rectangle_cord[3]), boundColor,
                           2)
-            cv2.putText(frame1, "Status: {}".format('Movement'), (rectangle_cord[0], rectangle_cord[1]),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1, (0, 0, 255), 3)
+            if walking_speed == 0 or secondTime:
+                cv2.putText(frame1, "Status: {}".format('Movement'), (rectangle_cord[0], rectangle_cord[1]),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1, (0, 0, 255), 3)
+            elif not secondTime:
+                cv2.putText(frame1, "Status: Movemnt, speed: {}".format(walking_speed), (rectangle_cord[0], rectangle_cord[1]),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1, (0, 0, 255), 3)
             isWalking = True
 
         if rectangle_cord[4]:

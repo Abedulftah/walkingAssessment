@@ -228,12 +228,16 @@ class PoseEstimation(threading.Thread):
         counter = 1
         frameQueue = queue.Queue()
         othersQueue = queue.Queue()
-        walking_speed = 0
+        walking_speed, count_falses = 0, 0
         secondTime = False
         passedFirst = False
+        first_skeleton = None
 
         start_time = get_start_time(self.video_num, self.video_num_session)
         cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
+        video_writer = cv2.VideoWriter('output/data/output_10_T0.mp4',
+                                       cv2.VideoWriter_fourcc(*'mp4v'),
+                                       cap.get(cv2.CAP_PROP_FPS), (1350, 650))
 
         while cap.isOpened() or not frameQueue.empty():
             if self.should_stop.is_set():
@@ -248,10 +252,13 @@ class PoseEstimation(threading.Thread):
                 lastBlockFrame = frame_temp
                 keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame_temp, select)
                 othersQueue.put([keypoints_with_scores, img, change_cord_rp, specific_person])
-                # if change_cord_rp:
-                #     y, x, _ = frame_temp.shape
-                #     select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
+                if change_cord_rp:
+                    y, x, _ = frame_temp.shape
+                    select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
+
+                first_skeleton = select
                 counter += 1
+
             if counter < 45:
                 continue
 
@@ -269,7 +276,11 @@ class PoseEstimation(threading.Thread):
                 if change_cord_rp1:
                     y, x, _ = frame.shape
                     select = np.squeeze(np.multiply(specific_person1, [y, x, 1]))
-                    print('in')
+                    count_falses = 0
+                else:
+                    count_falses += 1
+            if count_falses >= 45:
+                select = first_skeleton
 
             coords = [[int(specific_person[16][1] * frame.shape[1]),
                        int(specific_person[16][0] * frame.shape[0])],
@@ -333,7 +344,8 @@ class PoseEstimation(threading.Thread):
             # why select and not specific person
             y, x, _ = frame.shape
             movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1, np.multiply(specific_person, [y, x, 1]), fine,
-                                                                                         boundColor, xyxy, movement_time, rectangle_cord, fine2)
+                                                                                         boundColor, xyxy, movement_time, rectangle_cord, fine2,
+                                                                                         walking_speed, secondTime)
             distance_from_start = 1000
             distance_from_line2 = 1000
             if specific_person[16][2] >= 0.25 and specific_person[15][2] >= 0.25:
@@ -345,8 +357,9 @@ class PoseEstimation(threading.Thread):
             # passedFirst = False
             # print(distance_from_start)
             moving_forward = distance_from_line - BlockFrameDistance
-            if 10 <= distance_from_start <= 20 and self.feetOnLine(self.firstFrame, frame, detectedLines[0])\
-                    and self.isWalking and moving_forward >= dis_threshold:
+            if (-10 < distance_from_start < 10 or (
+                    10 <= distance_from_start <= 30 and self.feetOnLine(self.firstFrame, frame, detectedLines[0]))) \
+                    and self.isWalking and moving_forward >=dis_threshold and change_cord_rp:
                 print('on the first line')
                 passedFirst = True
 
@@ -380,6 +393,7 @@ class PoseEstimation(threading.Thread):
                          (int(detectedLines[1][2]), int(detectedLines[1][3])), (0, 255, 0), 3)
 
             out_frame = cv2.resize(frame, (1350, 650))
+            video_writer.write(out_frame)
             # self.mainWindow.update_image(out_frame)
             cv2.imshow('Video', out_frame)
 
@@ -390,12 +404,13 @@ class PoseEstimation(threading.Thread):
                     walking_speed /= 2
                     secondTime = False
                     save_evaluation(self.PATH, walking_speed)
+                else:
+                    secondTime = True
 
                 print(walking_speed)
                 frameCount = 0
                 boundColor = (0, 255, 0)
                 passedFirst = False
-                secondTime = True
             elif passedFirst:
                 boundColor = (255, 0, 0)
             else:
@@ -414,6 +429,7 @@ class PoseEstimation(threading.Thread):
                 break
             movement_time += 1
         cap.release()
+        video_writer.release()
         cv2.destroyAllWindows()
 
     def stop(self):
