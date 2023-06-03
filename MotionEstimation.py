@@ -1,23 +1,6 @@
 import cv2
 
 
-def is_moving_forward(xyxy, center_x, center_y):
-    # Calculate motion vector
-    motion_vector1 = (center_x - xyxy[0], center_y - xyxy[1])  # Determine direction of motion
-    if abs(motion_vector1[0]) > abs(motion_vector1[1]):
-        if motion_vector1[0] > 0:
-            print('Object moved right')
-        else:
-            print('Object moved left')
-        return False
-    else:
-        if motion_vector1[1] > 0:
-            print('Object moved down')
-        else:
-            print('Object moved up')
-        return True
-
-
 def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, movement_time, rectangle_cord, fine2=True, walking_speed=0, secondTime=False):
     noise = cv2.meanStdDev(frame1)[1][0][0]
     isWalking = False
@@ -46,9 +29,6 @@ def motionDetection(frame1, frame2, specific_person, fine, boundColor, xyxy, mov
 
         if xyxy is None:
             xyxy = (specific_person[16][1], specific_person[16][0], specific_person[15][1], specific_person[15][0])
-        elif moving:
-            # moving_forward = is_moving_forward(xyxy, x + w // 2, y + h // 2)
-            pass
 
         if movement_time % 2 == 0:
             xyxy = (specific_person[16][1], specific_person[16][0], specific_person[15][1], specific_person[15][0])

@@ -53,10 +53,10 @@ EDGES = {
     (14, 16): 'c'
 }
 real_time_size = (640, 480)
-
+KEY_POINTS_NUMBER = 17
 
 class PoseEstimation(threading.Thread):
-    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None, putDetectedLine=True, personFound = None):
+    def __init__(self, PATH="video16_Trim.mp4", mainWindow=None, putDetectedLine=True, personFound=None):
         super(PoseEstimation, self).__init__()
         self.frame = None
         self.mainWindow = mainWindow
@@ -87,13 +87,13 @@ class PoseEstimation(threading.Thread):
         coords = [int(startLine[0]), int(startLine[1] - 8), int(startLine[2]), int(startLine[3] + 20)]
         count, ind = 0, 0
         lst1, lst2 = [], []
-        for x in range(coords[0], coords[2]+1):
+        for x in range(coords[0], coords[2] + 1):
             lst1.append([])
             lst2.append([])
-            for y in range(coords[1], coords[3]+1):
+            for y in range(coords[1], coords[3] + 1):
                 lst1[ind].append(frame1[y][x])
                 lst2[ind].append(frame2[y][x])
-            ind +=1
+            ind += 1
         frame1_temp = np.array(lst1)
         frame2_temp = np.array(lst2)
 
@@ -135,21 +135,25 @@ class PoseEstimation(threading.Thread):
             self.draw_connections(frame, person, edges, confidence_threshold)
             self.draw_keypoints(frame, person, confidence_threshold)
 
+    # we need to take care of the case when the confidence of all coordinates is extremely low
     def find_person_keypoints(self, shaped, select, confidence_threshold):
-        i = 0
-        sum_distance = 0
+        i, sum_distance, count = 0, 0, 0
         if len(select) > 2 and confidence_threshold:
             confidence_threshold = select[:, 2:]
             confidence_threshold = (np.max(confidence_threshold) + np.min(confidence_threshold)) / 2
+        else:
+            confidence_threshold = 0
         for kp in shaped:
             ky, kx, _ = kp
             if len(select) > 2 and select[i][2] >= confidence_threshold:
-                sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
+                sum_distance += abs(kx - select[i][1])*4 + abs(ky - select[i][0])
+                count += 1
             elif len(select) <= 2:
-                sum_distance += abs(kx - select[1]) + abs(ky - select[0])
+                sum_distance += (abs(kx - select[1])**2 + abs(ky - select[0]))
+                count += 1
             i += 1
 
-        return sum_distance
+        return sum_distance, count
 
     def detect_person(self, keypoints_with_scores, select):
         # there is one bug that when another person overlaps the right person.
@@ -157,31 +161,29 @@ class PoseEstimation(threading.Thread):
 
         # to save the closest person of all the people that we found
         right_person = None
-        right_personN = None
         min_person = float('inf')
-        min_personN = float('inf')
+        count = 0
 
         for person in keypoints_with_scores:
             if len(select) <= 2:
                 shaped = np.squeeze(np.multiply(person[:2], [y, x, 1]))
             else:
                 shaped = np.squeeze(np.multiply(person, [y, x, 1]))
+
             # find the right person with confidence
-
-            sum_distance = self.find_person_keypoints(shaped, select, True)
-
+            sum_distance, count = self.find_person_keypoints(shaped, select, True)
             if sum_distance < min_person and sum_distance != 0:
-                min_person = sum_distance
+                min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
                 right_person = person
+
             # find the right person without confidence
-            sum_distance = self.find_person_keypoints(shaped, select, False)
-            if sum_distance < min_personN:
-                min_personN = sum_distance
-                right_personN = person
-        if right_person is None:
-            return min_personN < 300, right_personN
-        else:
-            return min_person < 600, right_person
+            sum_distance, count = self.find_person_keypoints(shaped, select, False)
+            if sum_distance < min_person:
+                min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
+                right_person = person
+
+        print(min_person, count)
+        return min_person < 600, right_person
 
     def get_keypoints(self, frame, select):
         # Resize image
@@ -207,7 +209,7 @@ class PoseEstimation(threading.Thread):
         # Detection section
         with tf.device('/GPU:0'):
             results = movenet(input_img)
-        keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
+        keypoints_with_scores = results['output_0'].numpy()[:, :, :51].reshape((6, KEY_POINTS_NUMBER, 3))
 
         # detect the right person
         change_cord_rp, specific_person = self.detect_person(keypoints_with_scores, select)
@@ -218,24 +220,20 @@ class PoseEstimation(threading.Thread):
         global detectedLines
         self.mainWindow.personFound = select.copy()
         isFirstFrame, frameCount = True, 0
-        detectedLines = None
-        xyxy = None
-        rectangle_cord = []
+        detectedLines, xyxy, rectangle_cord = None, None, []
         cap = cv2.VideoCapture(self.PATH)
         ret, frame = cap.read()
         movement_time = 0
         boundColor = (0, 0, 255)
         counter = 1
-        frameQueue = queue.Queue()
-        othersQueue = queue.Queue()
+        frameQueue, othersQueue = queue.Queue(), queue.Queue()
         walking_speed, count_falses = 0, 0
-        secondTime = False
-        passedFirst = False
-        first_skeleton = None
+        secondTime, passedFirst = False, False
+        first_skeleton = select
 
         start_time = get_start_time(self.video_num, self.video_num_session)
-        cap.set(cv2.CAP_PROP_POS_MSEC, start_time*1000)
-        video_writer = cv2.VideoWriter('output/data/output_10_T0.mp4',
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+        video_writer = cv2.VideoWriter('output/data/output_100_T0.mp4',
                                        cv2.VideoWriter_fourcc(*'mp4v'),
                                        cap.get(cv2.CAP_PROP_FPS), (1350, 650))
 
@@ -253,10 +251,9 @@ class PoseEstimation(threading.Thread):
                 keypoints_with_scores, img, change_cord_rp, specific_person = self.get_keypoints(frame_temp, select)
                 othersQueue.put([keypoints_with_scores, img, change_cord_rp, specific_person])
                 if change_cord_rp:
-                    y, x, _ = frame_temp.shape
+                    y, x, _ = frame.shape
                     select = np.squeeze(np.multiply(specific_person, [y, x, 1]))
 
-                first_skeleton = select
                 counter += 1
 
             if counter < 45:
@@ -323,18 +320,19 @@ class PoseEstimation(threading.Thread):
 
             # Calculating the distance of the current frame, and the 45'th frame from the end line.
             coords1 = [[int(specific_person1[16][1] * frame.shape[1]),
-                       int(specific_person1[16][0] * frame.shape[0])],
-                      [int(specific_person1[15][1] * frame.shape[1]),
-                       int(specific_person1[15][0] * frame.shape[0])]]
+                        int(specific_person1[16][0] * frame.shape[0])],
+                       [int(specific_person1[15][1] * frame.shape[1]),
+                        int(specific_person1[15][0] * frame.shape[0])]]
             distance_from_line = min(coord_to_line_distance(coords[0], detectedLines[1]),
-                   coord_to_line_distance(coords[1], detectedLines[1]))
+                                     coord_to_line_distance(coords[1], detectedLines[1]))
             BlockFrameDistance = min(coord_to_line_distance(coords1[0], detectedLines[1]),
-                   coord_to_line_distance(coords1[1], detectedLines[1]))
+                                     coord_to_line_distance(coords1[1], detectedLines[1]))
             # print(distance_from_line, "    ", BlockFrameDistance)
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
             dis_threshold = 25
             fine2 = False
-            if lastBlockFrame is None or BlockFrameDistance <= 40 or abs(BlockFrameDistance - distance_from_line) > dis_threshold:
+            if lastBlockFrame is None or BlockFrameDistance <= 40 or abs(
+                    BlockFrameDistance - distance_from_line) > dis_threshold:
                 fine2 = True
 
             fine = False
@@ -343,23 +341,26 @@ class PoseEstimation(threading.Thread):
 
             # why select and not specific person
             y, x, _ = frame.shape
-            movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1, np.multiply(specific_person, [y, x, 1]), fine,
-                                                                                         boundColor, xyxy, movement_time, rectangle_cord, fine2,
+            movement_time, xyxy, rectangle_cord, frame, self.isWalking = motionDetection(frame, frame1,
+                                                                                         np.multiply(specific_person,
+                                                                                                     [y, x, 1]), fine,
+                                                                                         boundColor, xyxy,
+                                                                                         movement_time, rectangle_cord,
+                                                                                         fine2,
                                                                                          walking_speed, secondTime)
-            distance_from_start = 1000
-            distance_from_line2 = 1000
+            distance_from_start, distance_from_line2 = 1000, 1000
             if specific_person[16][2] >= 0.25 and specific_person[15][2] >= 0.25:
                 distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
-                       coord_to_line_distance(coords[1], detectedLines[1]))
+                                          coord_to_line_distance(coords[1], detectedLines[1]))
                 distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
-                       coord_to_line_distance(coords[1], detectedLines[0]))
+                                          coord_to_line_distance(coords[1], detectedLines[0]))
 
             # passedFirst = False
             # print(distance_from_start)
             moving_forward = distance_from_line - BlockFrameDistance
             if (-10 < distance_from_start < 10 or (
                     10 <= distance_from_start <= 30 and self.feetOnLine(self.firstFrame, frame, detectedLines[0]))) \
-                    and self.isWalking and moving_forward >=dis_threshold and change_cord_rp:
+                    and self.isWalking and moving_forward >= dis_threshold and change_cord_rp:
                 print('on the first line')
                 passedFirst = True
 
@@ -371,7 +372,7 @@ class PoseEstimation(threading.Thread):
             self.draw_keypoints(frame, specific_person, 0.25)
 
             # Render keypoints (all the people in the frame)
-            # loop_through_people(frame, keypoints_with_scores, EDGES, 0.25)
+            # self.loop_through_people(frame, keypoints_with_scores, EDGES, 0.25)
 
             # fps
             font = cv2.FONT_HERSHEY_SIMPLEX
