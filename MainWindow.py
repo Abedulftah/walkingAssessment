@@ -1,3 +1,4 @@
+""" Main GUI"""
 from PIL import Image, ImageTk
 import screeninfo
 from tkinter import filedialog, BOTH, LEFT, VERTICAL, RIGHT, Y, Label, PhotoImage
@@ -106,15 +107,20 @@ class MainWindow:
         self.canvas.pack(fill='both', expand=1)
 
     def undetect_line(self):
-        self.poseEstimation.stop()
-        self.poseEstimation = PoseEstimation(self.PATH, mainWindow=self, putDetectedLine=False,
-                                             personFound=self.personFound)
-        self.poseEstimation.start()
+        if self.PATH == "":
+            self.poseEstimation.putDetectedLine = False
+        else:
+            self.poseEstimation.stop()
+            self.poseEstimation = PoseEstimation(self.PATH, mainWindow=self, putDetectedLine=False,
+                                                 personFound=self.personFound)
+            self.poseEstimation.start()
 
     def close_window(self):
-        self.poseEstimation.stop()
+        if self.poseEstimation:
+            self.poseEstimation.stop()
         self.win.destroy()
         exit(0)
+
 
 def startApp(putDetectedLine):
     mainWindow = MainWindow(putDetectedLine=putDetectedLine)

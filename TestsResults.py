@@ -1,3 +1,5 @@
+""" I do not know if we need this, Rojeh, I am waiting for your opinion."""
+
 import openpyxl
 
 
@@ -79,7 +81,7 @@ def save_evaluation(path, value_to_save, column_name='Computed Speed'):
 
     # Get the existing column
     nameOf = path.split('/')
-    nameOf = nameOf[len(nameOf) - 1].split('_')
+    nameOf = nameOf[-1].split('_')
     nameOf[1] = nameOf[1].split('.')[0]
     print(nameOf)
     for i in range(1, worksheet.max_row):
