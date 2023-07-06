@@ -76,6 +76,7 @@ class PoseEstimation(threading.Thread):
         self.googleDrive = ReadData()
         self.T0T1T2 = None
         self.capIndex = 0
+        self.usingGoogle = False
 
     # a method to take the coordinates of the selected person.
     def mouse_callback(self, event, x, y, flags, param):
@@ -201,11 +202,13 @@ class PoseEstimation(threading.Thread):
                 min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
                 right_person = person
 
-            # find the right person without confidence
-            sum_distance, count = self.find_person_keypoints(shaped, select, False)
-            if sum_distance < min_person:
-                min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
-                right_person = person
+
+            if sum_distance == 0:
+                # find the right person without confidence
+                sum_distance, count = self.find_person_keypoints(shaped, select, False)
+                if sum_distance < min_person:
+                    min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
+                    right_person = person
 
         print(min_person, count)
         return min_person < 600, right_person
@@ -249,8 +252,9 @@ class PoseEstimation(threading.Thread):
         self.mainWindow.personFound = select.copy()
         isFirstFrame, frameCount = True, 0
         detectedLines, xyxy, rectangle_cord = None, None, []
-        if self.PATH != "video16_Trim.mp4":
+        if not self.usingGoogle:
             cap = cv2.VideoCapture(self.PATH)
+            cap.set(cv2.CAP_PROP_POS_MSEC, self.start_time)
         else:
             cap = self.T0T1T2[self.capIndex]
         frame = self.frame
@@ -313,7 +317,7 @@ class PoseEstimation(threading.Thread):
                     count_falses = 0
                 else:
                     count_falses += 1
-            if count_falses >= 45:
+            if count_falses >= 10:
                 select = first_skeleton
 
             coords = [[int(specific_person[16][1] * frame.shape[1]),
@@ -331,7 +335,7 @@ class PoseEstimation(threading.Thread):
             # if at least one of starting line, ending line is wrong we can click to pick them manual,
             # so this if is to restart the video.
             if not self.putDetectedLine:
-                if self.PATH == "video16_Trim.mp4":
+                if self.usingGoogle:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, self.googleDrive.start_time[self.capIndex])
                 cv2.destroyAllWindows()
                 return
@@ -488,12 +492,13 @@ class PoseEstimation(threading.Thread):
         cap.release()
         # video_writer.release()
         cv2.destroyAllWindows()
+        self.PATH = ""
 
     def stop(self):
         self.should_stop.set()
 
     def run(self):
-        if self.PATH != "video16_Trim.mp4":
+        if self.PATH != "":
             cap = cv2.VideoCapture(self.PATH)
 
             folders = self.PATH.split('/')
@@ -502,8 +507,8 @@ class PoseEstimation(threading.Thread):
             self.video_num = int(video_name[0])
             self.video_num_session = video_name[1]
 
-            start_time = get_start_time(self.video_num, self.video_num_session)
-            cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+            self.start_time = get_start_time(self.video_num, self.video_num_session) * 1000
+            cap.set(cv2.CAP_PROP_POS_MSEC, self.start_time)
             if cap.isOpened():
                 # read the first frame
                 # global frame
@@ -516,6 +521,7 @@ class PoseEstimation(threading.Thread):
                     cv2.setMouseCallback('Selecting the person', self.mouse_callback)
                     cv2.waitKey()
         else:
+            self.usingGoogle = True
             # we loop over all the patients.
             for patient in self.googleDrive.patients:
                 if patient['name'] == '91':
