@@ -19,8 +19,7 @@ class MotionDetection:
         noise = cv2.meanStdDev(frame1)[1][0][0]
         isWalking = False
         diff = cv2.absdiff(frame1, frame2)
-        gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        blur = gray
+        blur = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         if noise < 50:
             blur = cv2.GaussianBlur(blur, (5, 5), 1.5)
         else:

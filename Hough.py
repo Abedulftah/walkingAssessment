@@ -129,13 +129,13 @@ def start(frame, coordinates, toReturn):
     return toReturn
 
 
-def configureCoords(path, frame, coords):
+def configureCoords(path, frame, coords, kerem=False):
     toReturn = []
 
-    saved_value = save_evaluation(path, None, 'Start Line')
+    saved_value = save_evaluation(path, None, 'Start Line', kerem=kerem)
     if saved_value is not None:
         toReturn.append(saved_value)
-    saved_value = save_evaluation(path, None, 'End Line')
+    saved_value = save_evaluation(path, None, 'End Line', kerem=kerem)
     if saved_value is not None:
         toReturn.append(saved_value)
         return toReturn

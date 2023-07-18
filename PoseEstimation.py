@@ -77,6 +77,7 @@ class PoseEstimation(threading.Thread):
         self.T0T1T2 = None
         self.capIndex = 0
         self.usingGoogle = False
+        self.kerem = False
 
     # a method to take the coordinates of the selected person.
     def mouse_callback(self, event, x, y, flags, param):
@@ -94,7 +95,7 @@ class PoseEstimation(threading.Thread):
             else:
                 detectedLines.insert(0, [int(x - 80), int(y), int(x + 80), int(y)])
 
-    def feetOnLine(self, frame1, frame2, startLine):
+    def feetOnLine(self, frame1, frame2, startLine, threshold=0.57, sigma=1.5):
         coords = [int(startLine[0]), int(startLine[1] - 8), int(startLine[2]), int(startLine[3] + 20)]
         count, ind = 0, 0
         lst1, lst2 = [], []
@@ -108,7 +109,6 @@ class PoseEstimation(threading.Thread):
         frame1_temp = np.array(lst1)
         frame2_temp = np.array(lst2)
 
-        # cv2.imshow('aaa', frame1_temp)
         frame1_temp = cv2.cvtColor(frame1_temp, cv2.COLOR_BGR2GRAY)
         frame1_temp = cv2.equalizeHist(frame1_temp)
 
@@ -116,9 +116,9 @@ class PoseEstimation(threading.Thread):
         frame2_temp = cv2.equalizeHist(frame2_temp)
 
         (score, diff) = structural_similarity(frame1_temp, frame2_temp, gaussian_weights=True,
-                                              use_sample_covariance=True, sigma=1.5, full=True)
+                                              use_sample_covariance=True, sigma=sigma, full=True)
 
-        return score < 0.57
+        return score < threshold
 
     # a method to draw the lines between the coordinates of the detected person, taking only the coordinates that above
     # certain threshold.
@@ -155,16 +155,21 @@ class PoseEstimation(threading.Thread):
     # this method is to calculate the euclidean distance with some cases and returns the distance between the current
     # coordinate next frame coordinates.
     def find_person_keypoints(self, shaped, select, confidence_threshold):
-        i, sum_distance, count = 0, 0, 0
+        i, cords_we_see, sum_distance, count = 0, 0, 0, 0
         if len(select) > 2 and confidence_threshold:
             confidence_threshold = select[:, 2:]
             confidence_threshold = (np.max(confidence_threshold) + np.min(confidence_threshold)) / 2
+            for kp in select:
+                _, _, ks = kp
+                if ks >= confidence_threshold:
+                    cords_we_see += 1
         else:
             confidence_threshold = 0
         for kp in shaped:
-            ky, kx, _ = kp
+            ky, kx, ks = kp
             # first case when the person is moving we take the Euclidian metric.
-            if len(select) > 2 and select[i][2] >= confidence_threshold and self.isWalking:
+            if len(select) > 2 and select[i][
+                2] >= confidence_threshold and self.isWalking and cords_we_see >= KEY_POINTS_NUMBER // 2:
                 sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
                 count += 1
             # second case when the person is not moving we take the Euclidian metric with a fine on the x coordinates.
@@ -176,7 +181,6 @@ class PoseEstimation(threading.Thread):
                 sum_distance += (abs(kx - select[1]) ** 2 + abs(ky - select[0]))
                 count += 1
             i += 1
-
         return sum_distance, count
 
     # a method to track the right person.
@@ -202,7 +206,6 @@ class PoseEstimation(threading.Thread):
                 min_person = sum_distance + (10 * (KEY_POINTS_NUMBER - count))
                 right_person = person
 
-
             if sum_distance == 0:
                 # find the right person without confidence
                 sum_distance, count = self.find_person_keypoints(shaped, select, False)
@@ -219,11 +222,11 @@ class PoseEstimation(threading.Thread):
     def get_keypoints(self, frame, select):
         # Resize image
         hi, wi, di = frame.shape
-
         ratio = hi / wi
-        wi = wi // 32
-        wi *= 32
         wi = wi // 3
+
+        wi //= 32
+        wi *= 32
 
         if wi < 256:
             wi = 256
@@ -327,7 +330,7 @@ class PoseEstimation(threading.Thread):
             if isFirstFrame:
                 isFirstFrame = False
                 self.firstFrame = frame.copy()
-                detectedLines = configureCoords(self.PATH, frame, coords)
+                detectedLines = configureCoords(self.PATH, frame, coords, kerem=self.kerem)
                 if not self.putDetectedLine:
                     detectedLines = None
                     self.putDetectedLine = True
@@ -353,7 +356,7 @@ class PoseEstimation(threading.Thread):
                         exit()
                 for col in range(4):
                     detectedLines[0][col] = int(detectedLines[0][col] / scale)
-                save_evaluation(self.PATH, detectedLines[0].copy(), 'End Line')
+                save_evaluation(self.PATH, detectedLines[0].copy(), 'End Line', kerem=self.kerem)
 
             # this will be True if the algorithm didn't find any line, or it only found the end line.
             if len(detectedLines) == 1:
@@ -366,7 +369,7 @@ class PoseEstimation(threading.Thread):
                         exit()
                 for col in range(4):
                     detectedLines[0][col] = int(detectedLines[0][col] / scale)
-                save_evaluation(self.PATH, detectedLines[0].copy(), 'Start Line')
+                save_evaluation(self.PATH, detectedLines[0].copy(), 'Start Line', kerem=self.kerem)
 
             # Calculating the distance of the current frame, and the 45'th frame from the end line.
             coords1 = [[int(specific_person1[16][1] * frame.shape[1]),
@@ -395,19 +398,24 @@ class PoseEstimation(threading.Thread):
             # every thing is explained in the MotionEstimation class.
             y, x, _ = frame.shape
             movement_time, xyxy, rectangle_cord, frame, self.isWalking = s.motionDetection(frame, frame1,
-                                                                                         np.multiply(specific_person,
-                                                                                                     [y, x, 1]), fine,
-                                                                                         boundColor, xyxy,
-                                                                                         movement_time, rectangle_cord,
-                                                                                         fine2,
-                                                                                         walking_speed, secondTime)
+                                                                                           np.multiply(specific_person,
+                                                                                                       [y, x, 1]), fine,
+                                                                                           boundColor, xyxy,
+                                                                                           movement_time,
+                                                                                           rectangle_cord, fine2,
+                                                                                           walking_speed, secondTime)
             # here we check the distance from the lines.
             distance_from_start, distance_from_line2 = 1000, 1000
+            passed_second = False
             if specific_person[16][2] >= 0.25 and specific_person[15][2] >= 0.25:
                 distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
                                           coord_to_line_distance(coords[1], detectedLines[1]))
                 distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
                                           coord_to_line_distance(coords[1], detectedLines[0]))
+            elif passedFirst:
+                temp = [int(detectedLines[1][0] - 50), int(detectedLines[1][1] - 10), int(detectedLines[1][2] + 50),
+                        int(detectedLines[1][3])]
+                passed_second = self.feetOnLine(self.firstFrame, frame, temp, threshold=0.50, sigma=2)
 
             # passedFirst = False
             # print(distance_from_start)
@@ -456,13 +464,13 @@ class PoseEstimation(threading.Thread):
             cv2.imshow('Video', out_frame)
 
             # we calculate the speed of walking and saves it to the Excel.
-            if distance_from_line2 <= 50 and passedFirst:
+            if passedFirst and (distance_from_line2 <= 50 or passed_second):
                 if frameCount is not None:
                     walking_speed += 4 / (frameCount / 30)
                 if secondTime:
                     walking_speed /= 2
-                    secondTime = False
-                    save_evaluation(self.PATH, walking_speed)
+                    secondTime = False  # this variable is used if we didn't break.
+                    save_evaluation(self.PATH, walking_speed, kerem=self.kerem)
                     print(walking_speed)
                     break
                 else:
@@ -494,6 +502,14 @@ class PoseEstimation(threading.Thread):
         cv2.destroyAllWindows()
         self.PATH = ""
 
+    def deleteVid(self):
+        for filename in os.listdir(self.googleDrive.delete):
+            if filename.endswith(".mp4"):
+                file_path = os.path.join(self.googleDrive.delete, filename)
+                # Delete the .mp4 file
+                os.remove(file_path)
+                print("Deleted .mp4 file:", file_path)
+
     def stop(self):
         self.should_stop.set()
 
@@ -522,8 +538,10 @@ class PoseEstimation(threading.Thread):
                     cv2.waitKey()
         else:
             self.usingGoogle = True
+            self.T0T1T2 = []
             # we loop over all the patients.
             for patient in self.googleDrive.patients:
+                self.deleteVid()
                 if patient['name'] == '91':
                     continue
                 self.T0T1T2 = self.googleDrive.googleDriveData(patient)
@@ -548,3 +566,35 @@ class PoseEstimation(threading.Thread):
                         # this if means we detected at least on of the line wrong, so we'll let user select it manual.
                         if self.putDetectedLine:
                             self.capIndex += 1
+            self.kerem = True
+            for vid in self.googleDrive.videosKerem:
+                self.deleteVid()
+                self.T0T1T2.clear()
+                self.googleDrive.start_time.clear()
+                self.capIndex = 0
+                patient_details = get_patient_details(vid)
+                print(vid['name'])
+                if not patient_details or not patient_details[2].value or patient_details[9].value is not None:
+                    continue
+                self.T0T1T2.append(self.googleDrive.download_video(vid, patient_details))
+                if self.T0T1T2[-1] is None:
+                    continue
+
+                while self.capIndex == 0:
+                    if self.T0T1T2[self.capIndex].isOpened():
+                        # read the first frame
+                        # global frame
+                        ret, self.frame = self.T0T1T2[self.capIndex].read()
+                        if self.personFound is not None:
+                            self.multiPose(self.personFound)
+                        else:
+                            # letting the user select the right person.
+                            self.PATH = vid['name']
+                            cv2.imshow('Selecting the person', self.frame)
+                            cv2.setMouseCallback('Selecting the person', self.mouse_callback)
+                            cv2.waitKey()
+                        # this if means we detected at least on of the line wrong, so we'll let user select it manual.
+                        if self.putDetectedLine:
+                            self.capIndex += 1
+
+        print('DONE!')

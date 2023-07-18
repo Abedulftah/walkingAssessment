@@ -9,6 +9,8 @@ def get_row(sheet, row_name, session_num):
     column_index = None
     for column in sheet.iter_cols():
         if column[0].value == column_name:
+            if row_name is None:
+                return column[0].column
             column_index = column[0].column
             break
 
@@ -25,6 +27,11 @@ def get_row(sheet, row_name, session_num):
 
     return -1
 
+def get_patient_details(vid):
+    workbook = openpyxl.load_workbook('Data.xlsx')
+    for row in workbook['Sheet1']:
+        if row[1].value == vid['name'] and row[2].value:
+            return row
 
 def get_start_time(row_name, session_num):
     workbook = openpyxl.load_workbook('Data.xlsx')
@@ -67,8 +74,27 @@ def get_real_speed(row_name, session_num):
 
     return cell_val
 
+def get_real_computed_speed(row_name, session_num):
+    workbook = openpyxl.load_workbook('Data.xlsx')
+    sheet = workbook.active
 
-def save_evaluation(path, value_to_save, column_name='Computed Speed'):
+    row_index = get_row(sheet, row_name, None) + session_num
+    print(row_index)
+
+    column_name = 'Computed Speed'
+    column_index = None
+    for column in sheet.iter_cols():
+        if column[0].value == column_name:
+            column_index = column[0].column
+            break
+
+    cell = sheet.cell(row=row_index, column=column_index)
+    cell_val = cell.value
+
+    return cell_val
+
+
+def save_evaluation(path, value_to_save, column_name='Computed Speed', kerem=False):
     workbook = openpyxl.load_workbook('Data.xlsx')
 
     # Select the worksheet
@@ -80,25 +106,43 @@ def save_evaluation(path, value_to_save, column_name='Computed Speed'):
             break
 
     # Get the existing column
-    nameOf = path.split('/')
-    nameOf = nameOf[-1].split('_')
-    nameOf[1] = nameOf[1].split('.')[0]
-    print(nameOf)
-    for i in range(1, worksheet.max_row):
-        if worksheet.cell(row=i, column=1).value == int(nameOf[0]) and \
-                worksheet.cell(row=i, column=2).value == nameOf[1]:
-            cell_value = worksheet.cell(row=i, column=column_index).value
-            print(cell_value)
-            if column_name == 'Computed Speed' and (cell_value is not None or cell_value != ""):
-                worksheet.cell(row=i, column=column_index, value=value_to_save)
-            elif (column_name == 'Start Line' or column_name == 'End Line') and value_to_save is not None:
-                data_string = ', '.join(str(item) for item in value_to_save)
-                worksheet.cell(row=i, column=column_index, value=data_string)
-            elif column_name == 'Start Line' or column_name == 'End Line':
-                if cell_value is None or cell_value == "":
-                    return None
-                data = [int(item) for item in cell_value.split(', ')]
-                return data
+    if kerem:
+        for i in range(1, worksheet.max_row):
+            if worksheet.cell(row=i, column=2).value == path:
+                cell_value = worksheet.cell(row=i, column=column_index).value
+                print(cell_value)
+                if column_name == 'Computed Speed' and (cell_value is not None or cell_value != ""):
+                    worksheet.cell(row=i, column=column_index, value=value_to_save)
+                elif (column_name == 'Start Line' or column_name == 'End Line') and value_to_save is not None:
+                    data_string = ', '.join(str(item) for item in value_to_save)
+                    worksheet.cell(row=i, column=column_index, value=data_string)
+                elif column_name == 'Start Line' or column_name == 'End Line':
+                    if cell_value is None or cell_value == "":
+                        return None
+                    data = [int(item) for item in cell_value.split(', ')]
+                    return data
+    else:
+        nameOf = path.split('/')
+        nameOf = nameOf[-1].split('_')
+        nameOf[1] = nameOf[1].split('.')[0]
+        print(nameOf)
+        for i in range(1, worksheet.max_row):
+            if worksheet.cell(row=i, column=1).value == int(nameOf[0]) and \
+                    worksheet.cell(row=i, column=2).value == nameOf[1]:
+                cell_value = worksheet.cell(row=i, column=column_index).value
+                print(cell_value)
+                if column_name == 'Computed Speed' and (cell_value is not None or cell_value != ""):
+                    worksheet.cell(row=i, column=column_index, value=value_to_save)
+                elif (column_name == 'Start Line' or column_name == 'End Line') and value_to_save is not None:
+                    data_string = ', '.join(str(item) for item in value_to_save)
+                    worksheet.cell(row=i, column=column_index, value=data_string)
+                elif column_name == 'Start Line' or column_name == 'End Line':
+                    if cell_value is None or cell_value == "":
+                        return None
+                    data = [int(item) for item in cell_value.split(', ')]
+                    return data
 
     # Save the modified Excel file
     workbook.save('Data.xlsx')
+
+
