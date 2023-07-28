@@ -460,7 +460,6 @@ class PoseEstimation(threading.Thread):
 
             out_frame = cv2.resize(frame, (1350, 650))
             # video_writer.write(out_frame)
-            # self.mainWindow.update_image(out_frame)
             cv2.imshow('Video', out_frame)
 
             # we calculate the speed of walking and saves it to the Excel.
@@ -472,6 +471,7 @@ class PoseEstimation(threading.Thread):
                     secondTime = False  # this variable is used if we didn't break.
                     save_evaluation(self.PATH, walking_speed, kerem=self.kerem)
                     print(walking_speed)
+                    self.mainWindow.update_speed_label(walking_speed)
                     break
                 else:
                     secondTime = True
