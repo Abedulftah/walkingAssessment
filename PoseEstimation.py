@@ -95,6 +95,34 @@ class PoseEstimation(threading.Thread):
             else:
                 detectedLines.insert(0, [int(x - 80), int(y), int(x + 80), int(y)])
 
+    def histLine(self, line, frame1, frame2):
+        lst1, lst2 = [], []
+        ind = 0
+        for x in range(int(line[0]), int(line[2]) + 1):
+            lst1.append([])
+            lst2.append([])
+            for y in range(int(line[1]), int(line[1]) + 1):
+                lst1[ind].append(frame1[y][x])
+                lst2[ind].append(frame2[y][x])
+            ind += 1
+        frame1_temp = np.array(lst1)
+        frame2_temp = np.array(lst2)
+
+        diff = cv2.absdiff(frame1_temp, frame2_temp)
+        diff = np.sum(diff, axis=1)
+        lst = []
+        sum1 = 0
+        for i in range(len(diff)):
+            if i != 0 and i % 20 == 0:
+                lst.append(np.sum(sum1, axis=0) / 3)
+                sum1 = 0
+            else:
+                sum1 += diff[i]
+        lst.append(np.sum(sum1, axis=0) / 3)
+        print(lst)
+        loss = max(lst)
+        return loss > 500
+
     def feetOnLine(self, frame1, frame2, startLine, threshold=0.57, sigma=1.5):
         coords = [int(startLine[0]), int(startLine[1] - 8), int(startLine[2]), int(startLine[3] + 20)]
         count, ind = 0, 0
@@ -168,8 +196,8 @@ class PoseEstimation(threading.Thread):
         for kp in shaped:
             ky, kx, ks = kp
             # first case when the person is moving we take the Euclidian metric.
-            if len(select) > 2 and select[i][
-                2] >= confidence_threshold and self.isWalking and cords_we_see >= KEY_POINTS_NUMBER // 2:
+            if len(select) > 2 and select[i][2] >= confidence_threshold and self.isWalking \
+                    and cords_we_see >= KEY_POINTS_NUMBER // 2:
                 sum_distance += abs(kx - select[i][1]) + abs(ky - select[i][0])
                 count += 1
             # second case when the person is not moving we take the Euclidian metric with a fine on the x coordinates.
@@ -269,6 +297,8 @@ class PoseEstimation(threading.Thread):
         secondTime, passedFirst = False, False
         first_skeleton = select
         s = MotionDetection(0.25)
+        distance_from_start, distance_from_line2 = 1000, 1000
+        distance_from_line, BlockFrameDistance, secondTimeThreshold = 1000, 1000, 0
 
         # to get the start_time from excel.
         # no need for it if we have the ReadData class.
@@ -376,10 +406,13 @@ class PoseEstimation(threading.Thread):
                         int(specific_person1[16][0] * frame.shape[0])],
                        [int(specific_person1[15][1] * frame.shape[1]),
                         int(specific_person1[15][0] * frame.shape[0])]]
-            distance_from_line = min(coord_to_line_distance(coords[0], detectedLines[1]),
-                                     coord_to_line_distance(coords[1], detectedLines[1]))
-            BlockFrameDistance = min(coord_to_line_distance(coords1[0], detectedLines[1]),
-                                     coord_to_line_distance(coords1[1], detectedLines[1]))
+            if specific_person1[16][2] >= 0.25 or specific_person1[15][2] >= 0.25:
+                distance_from_line = min(coord_to_line_distance(coords[0], detectedLines[1]),
+                                         coord_to_line_distance(coords[1], detectedLines[1]))
+                BlockFrameDistance = min(coord_to_line_distance(coords1[0], detectedLines[1]),
+                                         coord_to_line_distance(coords1[1], detectedLines[1]))
+                if secondTimeThreshold == 0:
+                    secondTimeThreshold = distance_from_line2 // 2
             # print(distance_from_line, "    ", BlockFrameDistance)
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
             dis_threshold = 25
@@ -392,7 +425,8 @@ class PoseEstimation(threading.Thread):
             # if we detected movement we need to say it is moving for some frames even if we did
             # there is no movement.
             fine = False
-            if movement_time < (1.0 / (time.time() - start_time)) * 2:
+            # to change it 27 and check again
+            if movement_time <= 30:
                 fine = True
 
             # every thing is explained in the MotionEstimation class.
@@ -405,25 +439,32 @@ class PoseEstimation(threading.Thread):
                                                                                            rectangle_cord, fine2,
                                                                                            walking_speed, secondTime)
             # here we check the distance from the lines.
-            distance_from_start, distance_from_line2 = 1000, 1000
             passed_second = False
-            if specific_person[16][2] >= 0.25 and specific_person[15][2] >= 0.25:
-                distance_from_line2 = max(coord_to_line_distance(coords[0], detectedLines[1]),
+            if specific_person[16][2] >= 0.25 or specific_person[15][2] >= 0.25:
+                # some videos worked fine on max and some min.
+                distance_from_line2 = min(coord_to_line_distance(coords[0], detectedLines[1]),
                                           coord_to_line_distance(coords[1], detectedLines[1]))
                 distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
                                           coord_to_line_distance(coords[1], detectedLines[0]))
-            elif passedFirst:
-                temp = [int(detectedLines[1][0] - 50), int(detectedLines[1][1] - 10), int(detectedLines[1][2] + 50),
-                        int(detectedLines[1][3])]
-                passed_second = self.feetOnLine(self.firstFrame, frame, temp, threshold=0.50, sigma=2)
-
+            # we need to pick threshold around 200...
+            elif passedFirst and distance_from_line2 < secondTimeThreshold:
+                passed_second = self.histLine(detectedLines[1], self.firstFrame, frame)
+                print("PASSED SECOND", passed_second)
+            elif abs(distance_from_start) < 10 and change_cord_rp and self.isWalking and (specific_person[3][1] >
+                                                                                     specific_person[4][1]):
+                print(detectedLines)
+                passedFirst = self.histLine(detectedLines[0], self.firstFrame, frame)
+                print('PASSED!!!! first', passedFirst)
+            print(distance_from_line2)
             # passedFirst = False
             # print(distance_from_start)
             # check if we passed the first line.
             moving_forward = distance_from_line - BlockFrameDistance
-            if (-10 < distance_from_start < 10 or (
-                    10 <= distance_from_start <= 30 and self.feetOnLine(self.firstFrame, frame, detectedLines[0]))) \
-                    and self.isWalking and moving_forward >= dis_threshold and change_cord_rp:
+            if self.isWalking and moving_forward >= dis_threshold and specific_person[3][1] > specific_person[4][1] \
+                    and change_cord_rp and (abs(distance_from_start) < 10
+                                            or (10 <= distance_from_start <= 30 and self.feetOnLine(self.firstFrame,
+                                                                                                    frame,
+                                                                                                    detectedLines[0]))):
                 print('on the first line')
                 passedFirst = True
 
@@ -503,6 +544,8 @@ class PoseEstimation(threading.Thread):
         self.PATH = ""
 
     def deleteVid(self):
+        if self.googleDrive.delete is None:
+            return
         for filename in os.listdir(self.googleDrive.delete):
             if filename.endswith(".mp4"):
                 file_path = os.path.join(self.googleDrive.delete, filename)
@@ -542,7 +585,7 @@ class PoseEstimation(threading.Thread):
             # we loop over all the patients.
             for patient in self.googleDrive.patients:
                 self.deleteVid()
-                if patient['name'] == '91':
+                if patient['name'] != '120' and patient['name'] != '115' and patient['name'] != '114' and patient['name'] != '81' and patient['name'] != '60':
                     continue
                 self.T0T1T2 = self.googleDrive.googleDriveData(patient)
                 self.capIndex = 0
@@ -574,7 +617,8 @@ class PoseEstimation(threading.Thread):
                 self.capIndex = 0
                 patient_details = get_patient_details(vid)
                 print(vid['name'])
-                if not patient_details or not patient_details[2].value or patient_details[9].value is not None:
+                if vid['name'] != "37_Side+Walking_WIN_20210513_08_56_23_Pro.mp4" or not patient_details or not \
+                        patient_details[2].value or patient_details[9].value is not None:
                     continue
                 self.T0T1T2.append(self.googleDrive.download_video(vid, patient_details))
                 if self.T0T1T2[-1] is None:
