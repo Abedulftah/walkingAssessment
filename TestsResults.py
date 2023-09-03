@@ -1,8 +1,12 @@
-""" I do not know if we need this, Rojeh, I am waiting for your opinion."""
+""" TestResults class used to add/find and update data in the Excel file (Data.xlsx),
+it finds data such as the starting time of the 4-Meter walk for the specific person, in addition it adds
+the coordinates of the start and finish lines whenever the User selects the lines.
+At the end it adds the average walking speed to the row corresponding to the video."""
 
 import openpyxl
 
 
+# Returns the index of the row corresponding to the given patient and session
 def get_row(sheet, row_name, session_num):
     column_name = 'Number'
 
@@ -33,6 +37,7 @@ def get_patient_details(vid):
         if row[1].value == vid['name'] and row[2].value:
             return row
 
+# Used to find the exact start time of the 4-Meter walk for the given patient
 def get_start_time(row_name, session_num):
     workbook = openpyxl.load_workbook('Data.xlsx')
     sheet = workbook['Sheet1']
@@ -56,6 +61,7 @@ def get_start_time(row_name, session_num):
     return (60 * minutes) + seconds
 
 
+# Returns the speed of the patient found by the physiotherapist
 def get_real_speed(row_name, session_num):
     workbook = openpyxl.load_workbook('SPSS.xlsx')
     sheet = workbook['RESULTS']
@@ -74,6 +80,7 @@ def get_real_speed(row_name, session_num):
 
     return cell_val
 
+# Returns the speed of the patient found by the program
 def get_real_computed_speed(row_name, session_num):
     workbook = openpyxl.load_workbook('Data.xlsx')
     sheet = workbook.active
@@ -94,6 +101,7 @@ def get_real_computed_speed(row_name, session_num):
     return cell_val
 
 
+# This function is called at the end in order to save the speed evaluation the program found
 def save_evaluation(path, value_to_save, column_name='Computed Speed', kerem=False):
     workbook = openpyxl.load_workbook('Data.xlsx')
 

@@ -300,16 +300,6 @@ class PoseEstimation(threading.Thread):
         distance_from_start, distance_from_line2 = 1000, 1000
         distance_from_line, BlockFrameDistance, secondTimeThreshold = 1000, 1000, 0
 
-        # to get the start_time from excel.
-        # no need for it if we have the ReadData class.
-        # start_time = get_start_time(self.video_num, self.video_num_session)
-
-        # to set the video to the starting time of the relevant section of the video.
-        # cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
-        # video_writer = cv2.VideoWriter('output/data/output_100_T0.mp4',
-        #                                cv2.VideoWriter_fourcc(*'mp4v'),
-        #                                cap.get(cv2.CAP_PROP_FPS), (1350, 650))
-
         while cap.isOpened() or not frameQueue.empty():
             if self.should_stop.is_set():
                 cv2.destroyAllWindows()
@@ -317,7 +307,7 @@ class PoseEstimation(threading.Thread):
             while self.paused:
                 pass
 
-            # the first 45 frame we put into a queue.
+            # The first 45 frames are put into a queue.
             while counter < 45:
                 ret_temp, frame_temp = cap.read()
                 frameQueue.put([ret_temp, frame_temp])
@@ -338,7 +328,6 @@ class PoseEstimation(threading.Thread):
 
             keypoints_with_scores, img, change_cord_rp, specific_person = othersQueue.get()
 
-            # Maybe the if statement should be: if lastBlockFrame is not None.
             if cap.isOpened():
                 keypoints_with_scores1, img1, change_cord_rp1, specific_person1 = self.get_keypoints(lastBlockFrame,
                                                                                                      select)
@@ -365,7 +354,7 @@ class PoseEstimation(threading.Thread):
                     detectedLines = None
                     self.putDetectedLine = True
 
-            # if at least one of starting line, ending line is wrong we can click to pick them manual,
+            # If at least one of starting line, ending line is wrong we can click to pick them manual,
             # so this if is to restart the video.
             if not self.putDetectedLine:
                 if self.usingGoogle:
@@ -388,7 +377,7 @@ class PoseEstimation(threading.Thread):
                     detectedLines[0][col] = int(detectedLines[0][col] / scale)
                 save_evaluation(self.PATH, detectedLines[0].copy(), 'End Line', kerem=self.kerem)
 
-            # this will be True if the algorithm didn't find any line, or it only found the end line.
+            # This will be True if the algorithm didn't find any line, or it only found the end line.
             if len(detectedLines) == 1:
                 out_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
                 cv2.imshow('Choose start line!', out_frame)
@@ -413,7 +402,7 @@ class PoseEstimation(threading.Thread):
                                          coord_to_line_distance(coords1[1], detectedLines[1]))
                 if secondTimeThreshold == 0:
                     secondTimeThreshold = distance_from_line2 // 2
-            # print(distance_from_line, "    ", BlockFrameDistance)
+
             # Now We can find if the person is moving forward by setting a threshold to the difference between them.
             dis_threshold = 25
             fine2 = False
@@ -421,7 +410,7 @@ class PoseEstimation(threading.Thread):
                     BlockFrameDistance - distance_from_line) > dis_threshold:
                 fine2 = True
 
-            # we don't need to check if we can notice the movement of the person at every frame we need to skip some,
+            # We don't need to check if we can notice the movement of the person at every frame we need to skip some,
             # if we detected movement we need to say it is moving for some frames even if we did
             # there is no movement.
             fine = False
@@ -429,7 +418,7 @@ class PoseEstimation(threading.Thread):
             if movement_time <= 30:
                 fine = True
 
-            # every thing is explained in the MotionEstimation class.
+            # Every thing is explained in the MotionEstimation class.
             y, x, _ = frame.shape
             movement_time, xyxy, rectangle_cord, frame, self.isWalking = s.motionDetection(frame, frame1,
                                                                                            np.multiply(specific_person,
@@ -438,7 +427,7 @@ class PoseEstimation(threading.Thread):
                                                                                            movement_time,
                                                                                            rectangle_cord, fine2,
                                                                                            walking_speed, secondTime)
-            # here we check the distance from the lines.
+            # Checking the distance from the lines.
             passed_second = False
             if specific_person[16][2] >= 0.25 or specific_person[15][2] >= 0.25:
                 # some videos worked fine on max and some min.
@@ -446,7 +435,7 @@ class PoseEstimation(threading.Thread):
                                           coord_to_line_distance(coords[1], detectedLines[1]))
                 distance_from_start = min(coord_to_line_distance(coords[0], detectedLines[0]),
                                           coord_to_line_distance(coords[1], detectedLines[0]))
-            # we need to pick threshold around 200...
+            # We need to pick threshold around 200...
             elif passedFirst and distance_from_line2 < secondTimeThreshold:
                 passed_second = self.histLine(detectedLines[1], self.firstFrame, frame)
                 print("PASSED SECOND", passed_second)
@@ -456,8 +445,7 @@ class PoseEstimation(threading.Thread):
                 passedFirst = self.histLine(detectedLines[0], self.firstFrame, frame)
                 print('PASSED!!!! first', passedFirst)
             print(distance_from_line2)
-            # passedFirst = False
-            # print(distance_from_start)
+
             # check if we passed the first line.
             moving_forward = distance_from_line - BlockFrameDistance
             if self.isWalking and moving_forward >= dis_threshold and specific_person[3][1] > specific_person[4][1] \
@@ -468,17 +456,14 @@ class PoseEstimation(threading.Thread):
                 print('on the first line')
                 passedFirst = True
 
-            # we'll start counting the frames if we passed the first line.
+            # Start counting frames when the first line is passed
             if self.isWalking and distance_from_line2 > 50 and passedFirst and frameCount is not None:
                 frameCount += 1
                 print(frameCount)
 
-            # to draw the detected person.
+            # To draw the detected person.
             self.draw_connections(frame, specific_person, EDGES, 0.25)
             self.draw_keypoints(frame, specific_person, 0.25)
-
-            # Render keypoints (all the people in the frame)
-            # self.loop_through_people(frame, keypoints_with_scores, EDGES, 0.25)
 
             # fps
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -500,7 +485,6 @@ class PoseEstimation(threading.Thread):
                          (int(detectedLines[1][2]), int(detectedLines[1][3])), (0, 255, 0), 3)
 
             out_frame = cv2.resize(frame, (1350, 650))
-            # video_writer.write(out_frame)
             cv2.imshow('Video', out_frame)
 
             # we calculate the speed of walking and saves it to the Excel.
@@ -534,12 +518,11 @@ class PoseEstimation(threading.Thread):
                 lastBlockFrame = frame_temp
             else:
                 lastBlockFrame = None
-            # check every 10 nanoseconds if the q is pressed to exits.
+            # Check every 10 nanoseconds if the q is pressed to exits.
             if cv2.waitKey(10) & 0xFF == ord('q'):
                 break
             movement_time += 1
         cap.release()
-        # video_writer.release()
         cv2.destroyAllWindows()
         self.PATH = ""
 
@@ -569,7 +552,7 @@ class PoseEstimation(threading.Thread):
             self.start_time = get_start_time(self.video_num, self.video_num_session) * 1000
             cap.set(cv2.CAP_PROP_POS_MSEC, self.start_time)
             if cap.isOpened():
-                # read the first frame
+                # Read the initial frame
                 # global frame
                 ret, self.frame = cap.read()
                 cap.release()
@@ -582,31 +565,31 @@ class PoseEstimation(threading.Thread):
         else:
             self.usingGoogle = True
             self.T0T1T2 = []
-            # we loop over all the patients.
+            # Loop over all the patients.
             for patient in self.googleDrive.patients:
                 self.deleteVid()
                 if patient['name'] != '120' and patient['name'] != '115' and patient['name'] != '114' and patient['name'] != '81' and patient['name'] != '60':
                     continue
                 self.T0T1T2 = self.googleDrive.googleDriveData(patient)
                 self.capIndex = 0
-                # we loop over the 3 videos or 4 video we got about the specific person (or what we got).
+                # Loop over the 3 or 4 videos We got about the specific person (Or whatever we got).
                 while self.capIndex < len(self.T0T1T2):
                     if self.T0T1T2[self.capIndex] is None:
                         self.capIndex += 1
                         continue
                     if self.T0T1T2[self.capIndex].isOpened():
-                        # read the first frame
+                        # Read the initial frame
                         # global frame
                         ret, self.frame = self.T0T1T2[self.capIndex].read()
                         if self.personFound is not None:
                             self.multiPose(self.personFound)
                         else:
-                            # letting the user select the right person.
+                            # Letting the user select the target person.
                             self.PATH = patient['name'] + '_T' + str(self.capIndex)
                             cv2.imshow('Selecting the person', self.frame)
                             cv2.setMouseCallback('Selecting the person', self.mouse_callback)
                             cv2.waitKey()
-                        # this if means we detected at least on of the line wrong, so we'll let user select it manual.
+                        # Allow the User to select the lines if at least one of the lines wasn't successfully detected.
                         if self.putDetectedLine:
                             self.capIndex += 1
             self.kerem = True
@@ -626,18 +609,18 @@ class PoseEstimation(threading.Thread):
 
                 while self.capIndex == 0:
                     if self.T0T1T2[self.capIndex].isOpened():
-                        # read the first frame
+                        # Read the initial frame
                         # global frame
                         ret, self.frame = self.T0T1T2[self.capIndex].read()
                         if self.personFound is not None:
                             self.multiPose(self.personFound)
                         else:
-                            # letting the user select the right person.
+                            # Letting the user select the target person.
                             self.PATH = vid['name']
                             cv2.imshow('Selecting the person', self.frame)
                             cv2.setMouseCallback('Selecting the person', self.mouse_callback)
                             cv2.waitKey()
-                        # this if means we detected at least on of the line wrong, so we'll let user select it manual.
+                        # Allow the User to select the lines if at least one of the lines wasn't successfully detected.
                         if self.putDetectedLine:
                             self.capIndex += 1
 

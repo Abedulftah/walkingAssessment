@@ -1,4 +1,7 @@
-""" Rojeh edit """
+""" Hough class is used to detect the start and finish lines used for the 4-Meter walks.
+ It starts by cropping the initial frame to include only the floor, followed by applying perspective transform
+ to the cropped image, after that it applies Hough Line detection on the image, and finally choosing the furthest and
+ third furthest lines from the camera as the start and finish lines respectively."""
 
 import cv2
 import matplotlib.pyplot as plt
@@ -10,7 +13,10 @@ from TestsResults import *
 def hough_lines_horizontal(im, lower_threshold, highr_threshold):
     im_l = im
 
+    # It uses Canny algorithm for edge detection to find all the edges in the image (floor)
     edge_detected = cv2.Canny(im_l, lower_threshold, highr_threshold, apertureSize=3)
+
+    # Using Hough line detection it finds all the lines on the floor
     lines = cv2.HoughLines(edge_detected, 1, np.pi / 180, 80, min_theta=np.pi / 2 - np.pi / 60, max_theta=np.pi / 2 + np.pi / 60)
 
     lines_list = []
@@ -57,6 +63,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
             lines_list.append([x1, y1, x2, y2])
 
     lines = []
+    # This loop filters the lines to keep only one of the lines where several lines collide
     for line in lines_list:
         x1, y1, x2, y2 = line
         mid_y = int((y1 + y2) / 2)
@@ -65,6 +72,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
             lines.append(line)
 
     startEndLines = []
+    # Choosing the furthest and third furthest lines from the camera
     if len(lines) != 0:
         sorted_lines = sorted(lines, key=lambda x: x[3])
         startEndLines.append(sorted_lines[0])
@@ -79,6 +87,7 @@ def hough_lines_horizontal(im, lower_threshold, highr_threshold):
     return None
 
 
+# Applying perspective transform in order to get the floor image
 def transformedImage(frame, coordinates):
     n1, m1 = int(max(coordinates[2][1], coordinates[3][1]) - min(coordinates[0][1], coordinates[1][1]))\
         , int(max(coordinates[1][0], coordinates[2][0]) - min(coordinates[0][0], coordinates[3][0]))
@@ -95,6 +104,7 @@ def transformedImage(frame, coordinates):
     return transformed_im, T
 
 
+# Applying the suitable transformations in order to get the lines in their correct position in the video
 def start(frame, coordinates, toReturn):
     im2, T = transformedImage(frame, coordinates)
 
@@ -129,6 +139,7 @@ def start(frame, coordinates, toReturn):
     return toReturn
 
 
+# Finding the coordinates surrounding the floor in the initial frame
 def configureCoords(path, frame, coords, kerem=False):
     toReturn = []
 

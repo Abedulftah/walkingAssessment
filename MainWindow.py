@@ -1,7 +1,8 @@
-""" Main GUI"""
+""" MainWindow class implementing user-friendly interface allowing all Users to run the application
+without having to interfere with the code."""
+
 from PIL import Image, ImageTk
-import screeninfo
-from tkinter import filedialog, BOTH, LEFT, VERTICAL, RIGHT, Y, Label, PhotoImage
+from tkinter import filedialog, BOTH, PhotoImage
 from PoseEstimation import *
 
 
@@ -11,10 +12,6 @@ class MainWindow:
         self.putDetectedLine = putDetectedLine
         self.poseEstimation = None
         self.personFound = None
-
-        screen_info = screeninfo.get_monitors()[0]
-        screen_width = screen_info.width
-        screen_height = screen_info.height
 
         self.win = tk.Tk()
         self.win.geometry(f"{280}x{160}")
@@ -87,6 +84,7 @@ class MainWindow:
             self.poseEstimation.start()
 
     def update_speed_label(self, speed):
+        speed = round(speed, 3)
         updated_text = self.speed_txt.format(speed)
         self.speed_label.config(text=updated_text)
 
