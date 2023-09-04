@@ -32,3 +32,20 @@ In order to analyze only the important frames.
 
 ### Tracking the person's movement:
 While moving, between each consecutive frames the program keeps tracking the person with the least error for the coordinates of the frames (We give more weight to the vertical distance, since We assume the person is moving forward, so vertically the error shouldn't change much).
+
+
+## How to run:
+
+### Requirements:
+1.	Creating a new environment by Anaconda and installing Tensorflow follow the instructions in this link : https://www.tensorflow.org/install/pip after you install the tensorflow.
+2.	Install into the environment Tensorflow-hub, pillow, scikit-image, opencv-python, matplotlib, openpyxl, google-api-python-client and moviepy.
+
+To run the project, you will need to use the new environment created in Anaconda as your Python interpreter.
+
+### For Pycharm users to run the project:
+1.	click <No interpreter>.
+2.	add new interpreter.
+3.	Add local interpreter it'll open a new window.
+4.	Go to Conda environment.
+5.	The first option is interpreter click to choose a file and navigate to Anaconda3\envs and choose the environment you created.
+
