@@ -11,8 +11,14 @@ For the purpose of detecting the person in the video, We use MoveNet(Tensor Flow
 
 ## Steps and Approaches:
 
-### Detecting the correct person:
-By pressing on the desired person, We can afterwards trace that person and analyze his walking.
+### User-interface:
+We have designed a user-friendly interface that allows users to run the application and select their desired video without needing to make changes within the code.
+
+![result2](https://github.com/Abedulftah/walkingAssessment/assets/82156892/266f701d-f31a-4133-9154-ea60ed5e8433)
+
+
+### Detecting the target person:
+By pressing on the target person, We can afterwards trace that person and analyze his walking.
 
 ### Detecting the start and finish lines:
 We take the coordinates sorrounding the floor (Decided by the foot coordinates of the detected person, and the camera), then We apply projective transformation
@@ -23,3 +29,6 @@ Another approach is to determine it by letting the User press on the lines, this
 ### Start and End time:
 We try to find the starting time (The time the person starts walking), and the Ending time (The time the person crosses the line found previously), 
 In order to analyze only the important frames.
+
+### Tracking the person's movement:
+While moving, between each consecutive frames the program keeps tracking the person with the least error for the coordinates of the frames (We give more weight to the vertical distance, since We assume the person is moving forward, so vertically the error shouldn't change much).
