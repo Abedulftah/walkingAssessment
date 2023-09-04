@@ -14,7 +14,7 @@ For the purpose of detecting the person in the video, We use MoveNet(Tensor Flow
 ### User-interface:
 We have designed a user-friendly interface that allows users to run the application and select their desired video without needing to make changes within the code.
 
-![result2](https://github.com/Abedulftah/walkingAssessment/assets/82156892/266f701d-f31a-4133-9154-ea60ed5e8433)
+![alt text](https://github.com/Abedulftah/walkingAssessment/blob/master/main_page.png)
 
 
 ### Detecting the target person:
